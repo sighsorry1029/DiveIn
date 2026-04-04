@@ -1,8 +1,9 @@
-﻿using System;
+﻿// Legacy implementation: kept for reference only, not compiled. Active plugin is Plugin2.cs.
+using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Timers;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -13,20 +14,31 @@ using UnityEngine;
 
 namespace ServerSyncModTemplate;
 
-[BepInPlugin(ModGUID, ModName, ModVersion)]
+[ㅇBepInPlugin(ModGUID, ModName, ModVersion)]
 public class ServerSyncModTemplatePlugin : BaseUnityPlugin
 {
-    internal const string ModName = "ServerSyncModTemplate";
+    internal const string ModName = "DiveIn";
     internal const string ModVersion = "1.0.0";
-    internal const string Author = "{Azumatt}";
+    internal const string Author = "sighsorry";
     private const string ModGUID = $"{Author}.{ModName}";
-    private static string ConfigFileName = $"{ModGUID}.cfg";
-    private static string ConfigFileFullPath = Paths.ConfigPath + Path.DirectorySeparatorChar + ConfigFileName;
+    private static readonly string ConfigFileName = $"{ModGUID}.cfg";
+    private static readonly string ConfigFileFullPath = Paths.ConfigPath + Path.DirectorySeparatorChar + ConfigFileName;
     internal static string ConnectionError = "";
     private readonly Harmony _harmony = new(ModGUID);
     public static readonly ManualLogSource ServerSyncModTemplateLogger = BepInEx.Logging.Logger.CreateLogSource(ModName);
     private static readonly ConfigSync ConfigSync = new(ModGUID) { DisplayName = ModName, CurrentVersion = ModVersion, MinimumRequiredVersion = ModVersion };
-    private FileSystemWatcher _watcher;
+
+    private static ConfigEntry<string> _divingMonsterPrefabs = null!;
+    private static ConfigEntry<float> _minSwimDepth = null!;
+    private static ConfigEntry<float> _maxSwimDepth = null!;
+    private static ConfigEntry<float> _targetDepthOffset = null!;
+    private static ConfigEntry<float> _depthAdjustSpeed = null!;
+
+    private static readonly object PrefabSetLock = new();
+    private static string _lastPrefabConfig = string.Empty;
+    private static HashSet<string> _divingPrefabSet = new(StringComparer.OrdinalIgnoreCase);
+
+    private FileSystemWatcher _watcher = null!;
     private readonly object _reloadLock = new();
     private DateTime _lastConfigReloadTime;
     private const long RELOAD_DELAY = 10000000; // One second
@@ -49,6 +61,33 @@ public class ServerSyncModTemplatePlugin : BaseUnityPlugin
         _serverConfigLocked = config("1 - General", "Lock Configuration", Toggle.On, "If on, the configuration is locked and can be changed by server admins only.");
         _ = ConfigSync.AddLockingConfigEntry(_serverConfigLocked);
 
+        _divingMonsterPrefabs = config(
+            "2 - Underwater Dive",
+            "Diving Monster Prefabs",
+            "",
+            "Comma-separated MonsterAI prefab names that are allowed to dive/swim underwater. Example: Serpent,Leech,Troll.");
+        _minSwimDepth = config(
+            "2 - Underwater Dive",
+            "Minimum Swim Depth",
+            1.4f,
+            new ConfigDescription("Minimum underwater swim depth used for configured MonsterAI prefabs.", new AcceptableValueRange<float>(0.25f, 20f)));
+        _maxSwimDepth = config(
+            "2 - Underwater Dive",
+            "Maximum Swim Depth",
+            100f,
+            new ConfigDescription("Maximum underwater swim depth used for configured MonsterAI prefabs.", new AcceptableValueRange<float>(2f, 500f)));
+        _targetDepthOffset = config(
+            "2 - Underwater Dive",
+            "Target Depth Offset",
+            0f,
+            new ConfigDescription("Additional depth offset when diving toward a target point. Positive values dive deeper.", new AcceptableValueRange<float>(-20f, 50f)));
+        _depthAdjustSpeed = config(
+            "2 - Underwater Dive",
+            "Depth Adjust Speed",
+            8f,
+            new ConfigDescription("How quickly AI adapts to the target swim depth.", new AcceptableValueRange<float>(0f, 60f)));
+
+        RefreshDivingPrefabCacheIfNeeded(force: true);
 
         Assembly assembly = Assembly.GetExecutingAssembly();
         _harmony.PatchAll(assembly);
@@ -99,6 +138,7 @@ public class ServerSyncModTemplatePlugin : BaseUnityPlugin
             {
                 ServerSyncModTemplateLogger.LogDebug("Reloading configuration...");
                 SaveWithRespectToConfigSet(true);
+                RefreshDivingPrefabCacheIfNeeded(force: true);
                 ServerSyncModTemplateLogger.LogInfo("Configuration reload complete.");
             }
             catch (Exception ex)
@@ -115,13 +155,15 @@ public class ServerSyncModTemplatePlugin : BaseUnityPlugin
         bool originalSaveOnSet = Config.SaveOnConfigSet;
         Config.SaveOnConfigSet = false;
         if (reload)
+        {
             Config.Reload();
+        }
         Config.Save();
         if (originalSaveOnSet)
         {
             Config.SaveOnConfigSet = originalSaveOnSet;
         }
-        
+
         // If you want to do something once localization completes, LocalizationManager has a hook for that.
         /*Localizer.OnLocalizationComplete += () =>
         {
@@ -130,6 +172,168 @@ public class ServerSyncModTemplatePlugin : BaseUnityPlugin
         };*/
     }
 
+    private static void RefreshDivingPrefabCacheIfNeeded(bool force = false)
+    {
+        string raw = _divingMonsterPrefabs?.Value ?? string.Empty;
+        if (!force && string.Equals(raw, _lastPrefabConfig, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        lock (PrefabSetLock)
+        {
+            if (!force && string.Equals(raw, _lastPrefabConfig, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _divingPrefabSet = raw
+                .Split(new[] { ',', ';', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(prefab => prefab.Trim())
+                .Where(prefab => prefab.Length > 0)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            _lastPrefabConfig = raw;
+        }
+    }
+
+    private static bool IsDivingMonster(MonsterAI monsterAI)
+    {
+        if (monsterAI == null)
+        {
+            return false;
+        }
+
+        RefreshDivingPrefabCacheIfNeeded();
+
+        string prefabName = Utils.GetPrefabName(monsterAI.gameObject);
+        return _divingPrefabSet.Contains(prefabName);
+    }
+
+    private static bool TryGetConfiguredMonster(BaseAI ai, out MonsterAI monsterAI)
+    {
+        if (ai is MonsterAI typedMonster && IsDivingMonster(typedMonster))
+        {
+            monsterAI = typedMonster;
+            return true;
+        }
+
+        monsterAI = null!;
+        return false;
+    }
+
+    private struct MoveToPatchState
+    {
+        public bool Active;
+        public bool PreviousFlying;
+    }
+
+    [HarmonyPatch(typeof(MonsterAI), nameof(MonsterAI.Awake))]
+    private static class MonsterAIAwakePatch
+    {
+        private static void Postfix(MonsterAI __instance)
+        {
+            if (!IsDivingMonster(__instance))
+            {
+                return;
+            }
+
+            __instance.m_avoidWater = false;
+        }
+    }
+
+    [HarmonyPatch(typeof(MonsterAI), nameof(MonsterAI.UpdateAI))]
+    private static class MonsterAIUpdateAIPatch
+    {
+        private static void Prefix(MonsterAI __instance)
+        {
+            if (!IsDivingMonster(__instance))
+            {
+                return;
+            }
+
+            __instance.m_avoidWater = false;
+        }
+    }
+
+    [HarmonyPatch(typeof(BaseAI), nameof(BaseAI.HavePath))]
+    private static class BaseAIHavePathPatch
+    {
+        private static bool Prefix(BaseAI __instance, ref bool __result)
+        {
+            if (!TryGetConfiguredMonster(__instance, out MonsterAI monsterAI))
+            {
+                return true;
+            }
+
+            Character character = monsterAI.m_character;
+            if (character == null || !character.InLiquid())
+            {
+                return true;
+            }
+
+            __result = true;
+            return false;
+        }
+    }
+
+    [HarmonyPatch(typeof(BaseAI), nameof(BaseAI.MoveTo))]
+    private static class BaseAIMoveToPatch
+    {
+        private static void Prefix(BaseAI __instance, ref Vector3 point, float dt, ref MoveToPatchState __state)
+        {
+            __state = default;
+            if (!TryGetConfiguredMonster(__instance, out MonsterAI monsterAI))
+            {
+                return;
+            }
+
+            Character character = monsterAI.m_character;
+            if (character == null || !character.InLiquid())
+            {
+                return;
+            }
+
+            __state.Active = true;
+            __state.PreviousFlying = character.m_flying;
+
+            float minDepth = Mathf.Max(0.25f, _minSwimDepth.Value);
+            float maxDepth = Mathf.Max(minDepth, _maxSwimDepth.Value);
+            float liquidLevel = character.GetLiquidLevel();
+            float desiredDepth = liquidLevel - point.y + _targetDepthOffset.Value;
+            desiredDepth = Mathf.Clamp(desiredDepth, minDepth, maxDepth);
+
+            float depthAdjustSpeed = Mathf.Max(0f, _depthAdjustSpeed.Value);
+            if (depthAdjustSpeed <= 0f)
+            {
+                character.m_swimDepth = desiredDepth;
+            }
+            else
+            {
+                float step = depthAdjustSpeed * Mathf.Max(dt, 0.01f);
+                character.m_swimDepth = Mathf.Clamp(Mathf.MoveTowards(character.m_swimDepth, desiredDepth, step), minDepth, maxDepth);
+            }
+
+            // Treat underwater navigation as flying for this MoveTo call so AI uses 3D steering.
+            character.m_flying = true;
+        }
+
+        private static void Postfix(BaseAI __instance, MoveToPatchState __state)
+        {
+            if (!__state.Active || !TryGetConfiguredMonster(__instance, out MonsterAI monsterAI))
+            {
+                return;
+            }
+
+            Character character = monsterAI.m_character;
+            if (character == null)
+            {
+                return;
+            }
+
+            character.m_flying = __state.PreviousFlying;
+        }
+    }
 
     #region ConfigOptions
 

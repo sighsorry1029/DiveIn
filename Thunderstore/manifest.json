@@ -1,8 +1,8 @@
 {
-  "name": "ServerSyncModTemplate",
+  "name": "DiveIn",
   "version_number": "1.0.0",
   "website_url": "https://discord.gg/pdHgy6Bsng",
-  "description": "Your mod description goes here. Do not forget to replace the icon.png file with your own. Must be 256x256. Your Readme.md file will be copied from the one in your project folder.",
+  "description": "GPL-3.0 Valheim mod with configurable monster underwater dive AI, player diving, underwater camera follow, and optional equipment use in water.",
   "dependencies": [
     "denikson-BepInExPack_Valheim-5.4.2202"
   ]
