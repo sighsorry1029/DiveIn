@@ -119,7 +119,7 @@ Default example:
 global:
   swim_depth_min: 0.25
   swim_depth_max: 30
-  swim_depth_adjust_speed: 20
+  swim_depth_adjust_speed: 2
 
 groups:
   surface_patrol:
@@ -128,6 +128,7 @@ groups:
     passive_max_depth: 20
     prefabs:
       - Serpent
+      - Leech
 
   mid_water:
     passive_min_depth: 0
