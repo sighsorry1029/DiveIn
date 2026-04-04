@@ -12,6 +12,7 @@ public partial class ServerSyncModTemplatePlugin
     internal const float DefaultUnderwaterVisibilityFalloff = 0f;
     internal const float DefaultMinimumUnderwaterMurkiness = 0.05f;
     internal const float DefaultMaximumUnderwaterMurkiness = 1f;
+    internal const float DefaultUnderwaterCameraMinWaterDistance = -5000f;
 
     internal static ConfigEntry<string> _waterEquipmentBlacklist = null!;
     internal static ConfigEntry<float> _waterStaminaRegenRateMultiplier = null!;
@@ -19,8 +20,6 @@ public partial class ServerSyncModTemplatePlugin
     internal static ConfigEntry<float> _waterDepthStaminaDrainFull = null!;
     internal static ConfigEntry<float> _waterDepthStaminaDrainMaxMultiplier = null!;
     internal static ConfigEntry<float> _playerSwimRunSpeedMultiplier = null!;
-    internal static ConfigEntry<float> _underwaterCameraMinWaterDistance = null!;
-    internal static ConfigEntry<Toggle> _debugUnderwaterVisualLogging = null!;
 
     private static readonly object WaterEquipmentBlacklistLock = new();
     private static string _lastWaterEquipmentBlacklistRaw = string.Empty;
@@ -76,24 +75,6 @@ public partial class ServerSyncModTemplatePlugin
                 "Multiplier applied to vanilla base swim speed while holding the run key underwater. 1 matches vanilla swim speed, 1.5 matches swim speed 3 with vanilla base swim speed 2.",
                 new AcceptableValueRange<float>(1f, 3f),
                 new ConfigurationManagerAttributes { Order = 95 }));
-        _underwaterCameraMinWaterDistance = config(
-            "4 - Debug",
-            "Underwater Camera Min Water Distance",
-            -5000f,
-            new ConfigDescription(
-                "Client-only underwater camera follow override. More negative values force the camera further through the water surface, while less negative values can reduce surface glitches. Test values like -1000 if needed.",
-                new AcceptableValueRange<float>(-5000f, -100f),
-                new ConfigurationManagerAttributes { Order = 11 }),
-            synchronizedSetting: false);
-        _debugUnderwaterVisualLogging = config(
-            "4 - Debug",
-            "Log Underwater Visual State",
-            Toggle.Off,
-            new ConfigDescription(
-                "Logs underwater camera, fog, and water surface apply/reset state for debugging.",
-                null,
-                new ConfigurationManagerAttributes { Order = 10 }),
-            synchronizedSetting: false);
     }
 
     internal static bool IsPlayerDivingEnabled()
@@ -113,12 +94,12 @@ public partial class ServerSyncModTemplatePlugin
 
     internal static bool IsUnderwaterVisualDebugLoggingEnabled()
     {
-        return _debugUnderwaterVisualLogging.Value == Toggle.On;
+        return false;
     }
 
     internal static float GetUnderwaterCameraMinWaterDistance()
     {
-        return Mathf.Clamp(_underwaterCameraMinWaterDistance.Value, -5000f, -100f);
+        return DefaultUnderwaterCameraMinWaterDistance;
     }
 
     internal static bool IsPlayerDiveEnvAllowed()

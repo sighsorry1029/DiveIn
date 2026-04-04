@@ -31,7 +31,6 @@ Current version: `1.0.0`
 - Adjusts camera follow behavior so the camera stays usable below the surface.
 - Changes fog color and density underwater for a clearer submerged look.
 - Applies water-surface rendering fixes to reduce below-surface visual glitches.
-- `Underwater Camera Min Water Distance` lets each client tune camera behavior if needed.
 
 ### 5. Monster Dive AI
 
@@ -93,14 +92,6 @@ Important entries:
   Speed multiplier while holding `Run` underwater.
 - `Dive AI Quality`
   Global quality/performance slider for underwater monster AI.
-- `Underwater Camera Min Water Distance`
-  Client-only camera override used to improve underwater camera behavior.
-- `Log Underwater Visual State`
-  Client-only debug logging for camera, fog, and water-surface visual state.
-- `Log Overlap Fields`
-  Debug logging for monster AI field overlap issues.
-
-`Underwater Camera Min Water Distance` and the debug logging entries are client-only and are not synchronized by the server.
 
 ### `DiveIn.yaml`
 

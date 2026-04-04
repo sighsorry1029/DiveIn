@@ -4,7 +4,6 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using BepInEx;
-using BepInEx.Bootstrap;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
@@ -30,8 +29,6 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
     private static readonly ConfigSync ConfigSync = new(ModGUID) { DisplayName = ModName, CurrentVersion = ModVersion, MinimumRequiredVersion = ModVersion };
 
     private static ConfigEntry<float> _diveAiQuality = null!;
-    private static ConfigEntry<Toggle> _debugOverlapFieldLogging = null!;
-    private static ConfigEntry<float> _debugOverlapLogIntervalSeconds = null!;
 
     private static readonly object PrefabSetLock = new();
     private static Dictionary<string, ConfiguredDiveProfile> _configuredDiveProfilesByPrefabName = new(StringComparer.OrdinalIgnoreCase);
@@ -118,10 +115,8 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
 
     private static readonly Dictionary<int, RouteCacheEntry> RouteCache = new();
     private static readonly Dictionary<int, SteerCacheEntry> SteerCache = new();
-    private static readonly Dictionary<int, float> OverlapLogTimes = new();
     private static readonly Dictionary<int, OriginalDiveFlags> OriginalDiveFlagsByInstance = new();
     private const int MaxCacheEntries = 2048;
-    private static bool _monsterDbDetected;
 
     public enum Toggle
     {
@@ -142,26 +137,11 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
             "Dive AI Quality",
             50f,
             new ConfigDescription("Single quality slider for underwater AI behavior. 0 = minimum CPU/minimum smoothness, 100 = maximum CPU/maximum smoothness. Internally adjusts route check cache time, steer cache time, cache cell size, and avoidance sample count.", new AcceptableValueRange<float>(0f, 100f)));
-        _debugOverlapFieldLogging = config(
-            "4 - Debug",
-            "Log Overlap Fields",
-            Toggle.Off,
-            "Logs final values for overlapping fields (m_avoidWater, m_canSwim, m_swimDepth) on configured monsters. Useful for checking interactions with MonsterDB.");
-        _debugOverlapLogIntervalSeconds = config(
-            "4 - Debug",
-            "Log Overlap Interval Seconds",
-            1f,
-            new ConfigDescription("Minimum time between overlap debug logs per AI instance.", new AcceptableValueRange<float>(0.1f, 10f)));
 
         InitializePlayerDiveConfig();
 
         InitializeMonsterDiveYaml();
         ClearRuntimeCaches();
-        _monsterDbDetected = Chainloader.PluginInfos.ContainsKey("RustyMods.MonsterDB");
-        if (_monsterDbDetected)
-        {
-            ServerSyncModTemplateLogger.LogInfo("MonsterDB detected. Overlap debug logging can be enabled in config.");
-        }
 
         _harmony.PatchAll(Assembly.GetExecutingAssembly());
         SetupWatcher();
@@ -408,7 +388,6 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
     {
         RouteCache.Clear();
         SteerCache.Clear();
-        OverlapLogTimes.Clear();
     }
 
     private static void TrimCachesIfNeeded()
@@ -423,10 +402,6 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
             SteerCache.Clear();
         }
 
-        if (OverlapLogTimes.Count > MaxCacheEntries)
-        {
-            OverlapLogTimes.Clear();
-        }
     }
 
     private static float GetPassiveDesiredDepth(MonsterAI monsterAI)
@@ -449,35 +424,7 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
 
     private static void TryLogOverlapFields(MonsterAI monsterAI, string stage)
     {
-        if (_debugOverlapFieldLogging.Value != Toggle.On)
-        {
-            return;
-        }
-
-        Character character = monsterAI.m_character;
-        if (character == null)
-        {
-            return;
-        }
-
-        int instanceId = monsterAI.GetInstanceID();
-        float now = Time.time;
-        float interval = Mathf.Max(0.1f, _debugOverlapLogIntervalSeconds.Value);
-        if (OverlapLogTimes.TryGetValue(instanceId, out float lastLogTime) && now - lastLogTime < interval)
-        {
-            return;
-        }
-
-        TrimCachesIfNeeded();
-        OverlapLogTimes[instanceId] = now;
-
-        string prefabName = Utils.GetPrefabName(monsterAI.gameObject);
-        string profileGroup = TryGetConfiguredDiveProfile(monsterAI, out ConfiguredDiveProfile configuredDiveProfile)
-            ? configuredDiveProfile.GroupName
-            : "none";
-        bool passiveDive = IsPassiveDiveState(monsterAI);
-        ServerSyncModTemplateLogger.LogInfo(
-            $"[OverlapDebug:{stage}] prefab={prefabName}, id={instanceId}, prefabGroup={profileGroup}, monsterDbDetected={_monsterDbDetected}, passiveDive={passiveDive}, avoidWater={monsterAI.m_avoidWater}, canSwim={character.m_canSwim}, swimDepth={character.m_swimDepth:F2}, inWater={character.InWater()}, liquidDepth={character.InLiquidDepth():F2}, liquidLevel={character.GetLiquidLevel():F2}");
+        // Debug-only overlap logging removed from config surface.
     }
 
     private static float GetQuality01()
