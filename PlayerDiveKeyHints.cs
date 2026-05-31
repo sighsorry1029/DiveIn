@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using HarmonyLib;
 using TMPro;
@@ -10,36 +11,103 @@ namespace ServerSyncModTemplate;
 internal static class PlayerDiveKeyHints
 {
     private const string SwimmingHintsRootName = "DiveIn_SwimmingHints";
+    private const string RunHintName = "DiveIn_RunHint";
     private const string DescendHintName = "DiveIn_DescendHint";
     private const string AscendHintName = "DiveIn_AscendHint";
 
     private static KeyHints? _owner;
     private static DiveHintSet? _swimmingHints;
     private static DiveHintSet? _combatHints;
+    private static readonly string[] KeyTextNameTokens = { "key", "bind", "binding", "shortcut", "input", "button" };
+    private static readonly string[] LabelTextNameTokens = { "label", "action", "name", "title" };
+
+    private sealed class DiveHintCell
+    {
+        public DiveHintCell(GameObject root)
+        {
+            Root = root;
+            TMP_Text[] texts = root
+                .GetComponentsInChildren<TMP_Text>(true)
+                .ToArray();
+
+            Key = FindKeyText(texts);
+            Label = FindLabelText(texts, Key);
+            ExtraTexts = texts
+                .Where(text => text != Label && text != Key)
+                .ToArray();
+        }
+
+        public GameObject Root { get; }
+        private TMP_Text? Label { get; }
+        private TMP_Text? Key { get; }
+        private TMP_Text[] ExtraTexts { get; }
+
+        public bool IsValid => Root && Label != null && Key != null;
+
+        public void Configure(string label, string keyText)
+        {
+            if (!IsValid)
+            {
+                return;
+            }
+
+            Label!.gameObject.SetActive(true);
+            Label.text = label;
+            foreach (TMP_Text extraText in ExtraTexts)
+            {
+                extraText.gameObject.SetActive(false);
+            }
+
+            Key!.gameObject.SetActive(true);
+            Key.text = keyText;
+        }
+
+        public void SetActive(bool active)
+        {
+            if (Root)
+            {
+                Root.SetActive(active);
+            }
+        }
+    }
 
     private sealed class DiveHintSet
     {
-        public DiveHintSet(GameObject? root, GameObject descendHint, GameObject ascendHint)
+        public DiveHintSet(GameObject? root, DiveHintCell runHint, DiveHintCell descendHint, DiveHintCell ascendHint)
         {
             Root = root;
+            RunHint = runHint;
             DescendHint = descendHint;
             AscendHint = ascendHint;
         }
 
         public GameObject? Root { get; }
-        public GameObject DescendHint { get; }
-        public GameObject AscendHint { get; }
+        public DiveHintCell RunHint { get; }
+        public DiveHintCell DescendHint { get; }
+        public DiveHintCell AscendHint { get; }
+        private bool ShowRunHint { get; set; } = true;
 
-        public bool IsValid => DescendHint && AscendHint && (Root == null || Root);
+        public bool IsValid => RunHint.IsValid && DescendHint.IsValid && AscendHint.IsValid && (Root == null || Root);
 
-        public void Configure(string descendKey, string ascendKey)
+        public void Configure(bool showRunHint, string fastSwimLabel, string runKey, string descendKey, string ascendKey)
         {
-            ConfigureHint(DescendHint, "Descend", descendKey);
-            ConfigureHint(AscendHint, "Ascend", ascendKey);
+            ShowRunHint = showRunHint;
+            if (showRunHint)
+            {
+                RunHint.Configure(fastSwimLabel, runKey);
+            }
+            else
+            {
+                RunHint.SetActive(false);
+            }
+
+            DescendHint.Configure(DiveLocalization.Localize(DiveLocalization.DescendKey), descendKey);
+            AscendHint.Configure(DiveLocalization.Localize(DiveLocalization.AscendKey), ascendKey);
         }
 
         public void SetActive(bool active)
         {
+            RunHint.SetActive(active && ShowRunHint);
             DescendHint.SetActive(active);
             AscendHint.SetActive(active);
             if (Root)
@@ -50,7 +118,7 @@ internal static class PlayerDiveKeyHints
 
         public void RebuildLayout()
         {
-            PlayerDiveKeyHints.RebuildLayout(Root != null ? Root : DescendHint);
+            PlayerDiveKeyHints.RebuildLayout(Root != null ? Root : DescendHint.Root);
         }
     }
 
@@ -93,10 +161,15 @@ internal static class PlayerDiveKeyHints
             return;
         }
 
+        bool showFastSwimHint = ServerSyncModTemplatePlugin.IsSwimRunEnabled();
+        string runKey = showFastSwimHint ? ServerSyncModTemplatePlugin.GetDiveRunKeyHint() : string.Empty;
+        string fastSwimLabel = DiveLocalization.Localize(diver.IsFastSwimEnabled()
+            ? DiveLocalization.FastSwimOnKey
+            : DiveLocalization.FastSwimOffKey);
         string descendKey = ServerSyncModTemplatePlugin.GetDiveDescendKeyHint();
         string ascendKey = ServerSyncModTemplatePlugin.GetDiveAscendKeyHint();
-        _swimmingHints?.Configure(descendKey, ascendKey);
-        _combatHints?.Configure(descendKey, ascendKey);
+        _swimmingHints?.Configure(showFastSwimHint, fastSwimLabel, runKey, descendKey, ascendKey);
+        _combatHints?.Configure(showFastSwimHint, fastSwimLabel, runKey, descendKey, ascendKey);
 
         bool showCombatHints = keyHints.m_combatHints != null && keyHints.m_combatHints.activeSelf;
         bool showSwimmingHints = !showCombatHints && HasNoVisibleHandItems(player);
@@ -168,11 +241,11 @@ internal static class PlayerDiveKeyHints
     private static DiveHintSet? CreateSwimmingHints(KeyHints keyHints)
     {
         Transform parent = keyHints.m_combatHints.transform.parent;
-        GameObject root = Object.Instantiate(keyHints.m_combatHints, parent, false);
+        GameObject root = UnityEngine.Object.Instantiate(keyHints.m_combatHints, parent, false);
         root.name = SwimmingHintsRootName;
         root.transform.SetSiblingIndex(keyHints.m_combatHints.transform.GetSiblingIndex());
 
-        Transform hintParent = GetKeyboardHintParent(root);
+        Transform hintParent = GetHintParent(root);
         for (int i = 0; i < root.transform.childCount; ++i)
         {
             Transform child = root.transform.GetChild(i);
@@ -180,101 +253,172 @@ internal static class PlayerDiveKeyHints
         }
 
         GameObject[] hintCells = GetTemplateHintCells(hintParent);
-        if (hintCells.Length == 0)
+        DiveHintSet? hintSet = CreateHintSet(hintParent, root, hintCells, true, "swimming");
+        if (hintSet == null)
         {
-            ServerSyncModTemplatePlugin.ServerSyncModTemplateLogger.LogWarning("Failed to create DiveIn swimming key hints: no combat hint template cells found.");
             root.SetActive(false);
             return null;
         }
 
-        GameObject descendHint = hintCells[0];
-        GameObject ascendHint = hintCells.Length > 1
-            ? hintCells[1]
-            : Object.Instantiate(descendHint, descendHint.transform.parent, false);
-        descendHint.name = DescendHintName;
-        ascendHint.name = AscendHintName;
-
-        foreach (GameObject hintCell in hintCells)
-        {
-            hintCell.SetActive(false);
-        }
-
-        descendHint.transform.SetSiblingIndex(0);
-        ascendHint.transform.SetSiblingIndex(1);
-
-        DiveHintSet hintSet = new(root, descendHint, ascendHint);
         hintSet.SetActive(false);
         return hintSet;
     }
 
     private static DiveHintSet? CreateCombatHints(KeyHints keyHints)
     {
-        Transform hintParent = GetKeyboardHintParent(keyHints.m_combatHints);
+        Transform hintParent = GetHintParent(keyHints.m_combatHints);
         GameObject[] templates = GetTemplateHintCells(hintParent);
-        if (templates.Length == 0)
+        DiveHintSet? hintSet = CreateHintSet(hintParent, null, templates, false, "combat");
+        if (hintSet == null)
         {
-            ServerSyncModTemplatePlugin.ServerSyncModTemplateLogger.LogWarning("Failed to create DiveIn combat key hints: no combat hint template cells found.");
             return null;
         }
 
-        GameObject descendHint = Object.Instantiate(templates[0], hintParent, false);
-        GameObject ascendHint = Object.Instantiate(templates.Length > 1 ? templates[1] : templates[0], hintParent, false);
-        descendHint.name = DescendHintName;
-        ascendHint.name = AscendHintName;
-        descendHint.transform.SetSiblingIndex(0);
-        ascendHint.transform.SetSiblingIndex(1);
-
-        DiveHintSet hintSet = new(null, descendHint, ascendHint);
         hintSet.SetActive(false);
         return hintSet;
     }
 
-    private static Transform GetKeyboardHintParent(GameObject root)
+    private static DiveHintSet? CreateHintSet(
+        Transform hintParent,
+        GameObject? root,
+        GameObject[] templateCells,
+        bool hideTemplateCells,
+        string context)
     {
-        return root.transform.Find("Keyboard") ?? root.transform;
+        if (templateCells.Length == 0)
+        {
+            ServerSyncModTemplatePlugin.ServerSyncModTemplateLogger.LogWarning(
+                $"Failed to create DiveIn {context} key hints: no combat hint template cells found.");
+            return null;
+        }
+
+        if (hideTemplateCells)
+        {
+            foreach (GameObject hintCell in templateCells)
+            {
+                hintCell.SetActive(false);
+            }
+        }
+
+        DiveHintCell runHint = CreateHintCell(templateCells[0], RunHintName, hintParent, 0);
+        DiveHintCell descendHint = CreateHintCell(templateCells[0], DescendHintName, hintParent, 1);
+        DiveHintCell ascendHint = CreateHintCell(templateCells[0], AscendHintName, hintParent, 2);
+        return new DiveHintSet(root, runHint, descendHint, ascendHint);
+    }
+
+    private static Transform GetHintParent(GameObject root)
+    {
+        string preferredParentName = ZInput.IsGamepadActive() ? "Gamepad" : "Keyboard";
+        return FindHintParentWithTemplates(root, preferredParentName)
+               ?? FindHintParentWithTemplates(root, "Keyboard")
+               ?? FindHintParentWithTemplates(root, "Gamepad")
+               ?? root.transform;
+    }
+
+    private static Transform? FindHintParentWithTemplates(GameObject root, string name)
+    {
+        Transform candidate = root.transform.Find(name);
+        return candidate != null && GetTemplateHintCells(candidate).Length > 0 ? candidate : null;
     }
 
     private static GameObject[] GetTemplateHintCells(Transform hintParent)
     {
         return hintParent
             .Cast<Transform>()
-            .Where(static child => !child.name.StartsWith("DiveIn_") && child.GetComponentsInChildren<TMP_Text>(true).Length > 0)
+            .Where(static child => !child.name.StartsWith("DiveIn_") && child.GetComponentsInChildren<TMP_Text>(true).Length >= 2)
             .Select(static child => child.gameObject)
             .ToArray();
     }
 
-    private static void ConfigureHint(GameObject? hint, string label, string keyText)
+    private static TMP_Text? FindKeyText(TMP_Text[] texts)
     {
-        if (!hint)
-        {
-            return;
-        }
-
-        TMP_Text[] texts = hint!
-            .GetComponentsInChildren<TMP_Text>(true)
-            .OrderBy(static text => text.transform.position.x)
-            .ToArray();
         if (texts.Length == 0)
         {
-            return;
+            return null;
         }
 
-        texts[0].gameObject.SetActive(true);
-        texts[0].text = label;
+        return texts.FirstOrDefault(static text => HierarchyNameContainsToken(text, KeyTextNameTokens))
+               ?? texts.FirstOrDefault(static text => LooksLikeKeyBindingText(text.text))
+               ?? texts.OrderBy(static text => text.transform.position.x).LastOrDefault();
+    }
 
-        if (texts.Length < 2)
+    private static TMP_Text? FindLabelText(TMP_Text[] texts, TMP_Text? keyText)
+    {
+        TMP_Text[] candidates = texts
+            .Where(text => text != keyText)
+            .ToArray();
+        if (candidates.Length == 0)
         {
-            return;
+            return null;
         }
 
-        for (int i = 1; i < texts.Length - 1; ++i)
+        return candidates.FirstOrDefault(static text => HierarchyNameContainsToken(text, LabelTextNameTokens))
+               ?? candidates.FirstOrDefault(static text => !LooksLikeKeyBindingText(text.text))
+               ?? candidates.OrderBy(static text => text.transform.position.x).FirstOrDefault();
+    }
+
+    private static bool HierarchyNameContainsToken(TMP_Text text, string[] tokens)
+    {
+        Transform? current = text.transform;
+        for (int depth = 0; current != null && depth < 4; ++depth)
         {
-            texts[i].gameObject.SetActive(false);
+            string normalizedName = NormalizeIdentifier(current.name);
+            if (!IsIgnoredHintContainerName(normalizedName) &&
+                tokens.Any(token => normalizedName.Contains(token)))
+            {
+                return true;
+            }
+
+            current = current.parent;
         }
 
-        TMP_Text key = texts[texts.Length - 1];
-        key.gameObject.SetActive(true);
-        key.text = keyText;
+        return false;
+    }
+
+    private static bool IsIgnoredHintContainerName(string normalizedName)
+    {
+        return normalizedName == "keyboard"
+               || normalizedName == "gamepad"
+               || normalizedName == "joystick";
+    }
+
+    private static bool LooksLikeKeyBindingText(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        string normalizedText = NormalizeIdentifier(text);
+        return normalizedText.Contains("mouse")
+               || normalizedText.Contains("ctrl")
+               || normalizedText.Contains("shift")
+               || normalizedText.Contains("alt")
+               || normalizedText.Contains("space")
+               || normalizedText.Contains("button")
+               || normalizedText.Contains("sprite")
+               || normalizedText.Length <= 2;
+    }
+
+    private static string NormalizeIdentifier(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        return new string(value
+            .Where(char.IsLetterOrDigit)
+            .Select(char.ToLowerInvariant)
+            .ToArray());
+    }
+
+    private static DiveHintCell CreateHintCell(GameObject template, string name, Transform parent, int siblingIndex)
+    {
+        GameObject hint = UnityEngine.Object.Instantiate(template, parent, false);
+        hint.name = name;
+        hint.transform.SetSiblingIndex(siblingIndex);
+        return new DiveHintCell(hint);
     }
 
     private static void SetAllHintsActive(bool active)

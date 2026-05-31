@@ -45,6 +45,7 @@ internal static class PlayerDivePatches
 
         diver.ResetSwimDepthIfNotInWater();
         diver.RefreshUnderwaterMovementState();
+        diver.UpdateFastSwimToggle();
         if (diver.ShouldForceSwimming())
         {
             diver.PrepareForcedSwimming();
@@ -72,17 +73,18 @@ internal static class PlayerDivePatches
         __state = new SwimmingUpdateState(diver, null);
 
         diver.UpdateSwimSpeed();
-        if (ServerSyncModTemplatePlugin.IsDiveAscendInputHeld() && diver.IsUnderSurface())
+        bool movementSuppressedForCombat = diver.IsMovementSuppressedForCombat();
+        if (!movementSuppressedForCombat && ServerSyncModTemplatePlugin.IsDiveAscendInputHeld() && diver.IsUnderSurface())
         {
             diver.Dive(dt, ascend: true, out Vector3? originalMoveDir);
             __state = new SwimmingUpdateState(diver, originalMoveDir);
         }
-        else if (ServerSyncModTemplatePlugin.IsDiveDescendInputHeld() && diver.CanDive())
+        else if (!movementSuppressedForCombat && ServerSyncModTemplatePlugin.IsDiveDescendInputHeld() && diver.CanDive())
         {
             diver.Dive(dt, ascend: false, out Vector3? originalMoveDir);
             __state = new SwimmingUpdateState(diver, originalMoveDir);
         }
-        else if ((__instance.IsOnGround() || !diver.IsDiving()) && !diver.IsIdleInWater())
+        else if (__instance.IsOnGround() || !diver.IsDiving())
         {
             diver.ResetSwimDepthToDefault();
         }
@@ -186,21 +188,7 @@ internal static class PlayerDivePatches
             return;
         }
 
-        diver.ApplyDepthScaledSwimDrain(dt);
+        diver.ApplyExtraSwimStaminaDrain(dt);
     }
 
-    [HarmonyPrefix]
-    [HarmonyPatch(typeof(Player), nameof(Player.SetControls))]
-    private static void PlayerSetControlsPrefix(Player __instance, ref bool crouch)
-    {
-        if (__instance != Player.m_localPlayer)
-        {
-            return;
-        }
-
-        if (__instance.IsSwimming())
-        {
-            crouch = false;
-        }
-    }
 }

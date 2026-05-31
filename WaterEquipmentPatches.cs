@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection.Emit;
 using HarmonyLib;
+using UnityEngine;
 
 namespace ServerSyncModTemplate;
 
@@ -73,15 +74,89 @@ internal static class WaterEquipmentPatches
         }
     }
 
+    [HarmonyPrefix]
+    [HarmonyPatch(typeof(Player), nameof(Player.SetControls))]
+    private static void PlayerSetControlsPrefix(
+        Player __instance,
+        ref Vector3 movedir,
+        ref bool attack,
+        ref bool attackHold,
+        ref bool secondaryAttack,
+        ref bool secondaryAttackHold,
+        ref bool crouch,
+        ref bool block,
+        ref bool blockHold)
+    {
+        if (!TryGetUnderwaterLocalDiver(__instance, out PlayerDiveController diver))
+        {
+            return;
+        }
+
+        crouch = false;
+
+        bool hadCombatInput = attack || attackHold || secondaryAttack || secondaryAttackHold || block || blockHold;
+        if (hadCombatInput)
+        {
+            movedir = Vector3.zero;
+            diver.SuppressMovementForCombat();
+        }
+
+        bool forceShowHiddenBlocker = (block || blockHold) && CanForceShowHiddenBlocker(__instance);
+        if (forceShowHiddenBlocker)
+        {
+            __instance.ShowHandItems();
+        }
+    }
+
+    [HarmonyPostfix]
+    [HarmonyPatch(typeof(Character), nameof(Character.UpdateSwimming))]
+    private static void CharacterUpdateSwimmingPostfix(Character __instance)
+    {
+        ForceUnderwaterGuardAnimation(__instance);
+    }
+
     private static bool ShouldForceShowHiddenHandItems(Player player)
     {
         return WasHideInputPressed(player) && CanForceShowHiddenHandItems(player);
     }
 
+    private static bool CanForceShowHiddenBlocker(Player player)
+    {
+        return TryGetUnderwaterLocalDiver(player, out _)
+               && !player.IsOnGround()
+               && !player.InDodge()
+               && HasHiddenBlocker(player)
+               && !HasWaterRestrictedHiddenBlocker(player);
+    }
+
+    private static void ForceUnderwaterGuardAnimation(Character character)
+    {
+        if (character is not Player player || !ShouldShowUnderwaterGuardAnimation(player))
+        {
+            return;
+        }
+
+        player.m_zanim.SetBool(Humanoid.s_blocking, true);
+        player.m_zanim.SetBool(Character.s_inWater, false);
+    }
+
+    private static bool ShouldShowUnderwaterGuardAnimation(Player player)
+    {
+        return TryGetUnderwaterLocalDiver(player, out _)
+               && player.IsBlocking();
+    }
+
+    private static bool TryGetUnderwaterLocalDiver(Player player, out PlayerDiveController diver)
+    {
+        diver = null!;
+        return PlayerDiveUtils.IsValidLocalPlayer(player)
+               && PlayerDiveUtils.TryGetLocalDiver(player, out diver)
+               && diver.ShouldTreatAsSwimming();
+    }
+
     private static bool CanForceShowHiddenHandItems(Player player)
     {
-        return PlayerDiveUtils.IsValidLocalPlayer(player)
-               && player.IsSwimming()
+        return TryGetUnderwaterLocalDiver(player, out _)
                && !player.IsOnGround()
                && !player.InDodge()
                && player.GetRightItem() == null
@@ -116,9 +191,31 @@ internal static class WaterEquipmentPatches
                IsWaterRestrictedHiddenItem(player.m_hiddenLeftItem);
     }
 
+    private static bool HasWaterRestrictedHiddenBlocker(Player player)
+    {
+        return IsWaterRestrictedHiddenBlocker(player.m_hiddenRightItem) ||
+               IsWaterRestrictedHiddenBlocker(player.m_hiddenLeftItem);
+    }
+
+    private static bool HasHiddenBlocker(Player player)
+    {
+        return IsBlockableHiddenItem(player.m_hiddenLeftItem) ||
+               IsBlockableHiddenItem(player.m_hiddenRightItem);
+    }
+
     private static bool IsWaterRestrictedHiddenItem(ItemDrop.ItemData? item)
     {
         return item != null && ServerSyncModTemplatePlugin.IsWaterRestrictedItem(item);
+    }
+
+    private static bool IsWaterRestrictedHiddenBlocker(ItemDrop.ItemData? item)
+    {
+        return IsBlockableHiddenItem(item) && ServerSyncModTemplatePlugin.IsWaterRestrictedItem(item);
+    }
+
+    private static bool IsBlockableHiddenItem(ItemDrop.ItemData? item)
+    {
+        return item?.m_shared != null && item.m_shared.m_blockable;
     }
 
     private static IEnumerable<CodeInstruction> InsertWaterEquipmentBypass<T>(
@@ -127,32 +224,14 @@ internal static class WaterEquipmentPatches
         OpCode argumentLoadOpCode,
         Func<T, bool> shouldKeepWaterRestriction)
     {
-        List<CodeInstruction> code = new(instructions);
-        CodeMatcher codeMatcher = new(code);
-        codeMatcher.MatchStartForward(SwimmingRestrictionPattern);
-        if (!codeMatcher.IsValid)
-        {
-            ServerSyncModTemplatePlugin.ServerSyncModTemplateLogger.LogWarning($"Failed to locate swimming item restriction in {methodName}. Leaving original instructions untouched.");
-            return code;
-        }
-
-        codeMatcher.Advance(SwimmingRestrictionInstructionCount);
-        if (!codeMatcher.IsValid)
-        {
-            ServerSyncModTemplatePlugin.ServerSyncModTemplateLogger.LogWarning($"Failed to advance transpiler cursor in {methodName}. Leaving original instructions untouched.");
-            return code;
-        }
-
-        object branchTarget = codeMatcher.InstructionAt(-1).operand;
-        return codeMatcher
-            .InsertAndAdvance(
-                new[]
-                {
-                    new CodeInstruction(argumentLoadOpCode),
-                    Transpilers.EmitDelegate(shouldKeepWaterRestriction),
-                    new CodeInstruction(OpCodes.Brfalse, branchTarget)
-                })
-            .InstructionEnumeration();
+        return InsertWaterEquipmentBypass(
+            instructions,
+            methodName,
+            new[]
+            {
+                new CodeInstruction(argumentLoadOpCode),
+                Transpilers.EmitDelegate(shouldKeepWaterRestriction)
+            });
     }
 
     private static IEnumerable<CodeInstruction> InsertWaterEquipmentBypass<T1, T2>(
@@ -162,32 +241,59 @@ internal static class WaterEquipmentPatches
         OpCode secondArgumentLoadOpCode,
         Func<T1, T2, bool> shouldKeepWaterRestriction)
     {
+        return InsertWaterEquipmentBypass(
+            instructions,
+            methodName,
+            new[]
+            {
+                new CodeInstruction(firstArgumentLoadOpCode),
+                new CodeInstruction(secondArgumentLoadOpCode),
+                Transpilers.EmitDelegate(shouldKeepWaterRestriction)
+            });
+    }
+
+    private static IEnumerable<CodeInstruction> InsertWaterEquipmentBypass(
+        IEnumerable<CodeInstruction> instructions,
+        string methodName,
+        IReadOnlyList<CodeInstruction> guardInstructions)
+    {
         List<CodeInstruction> code = new(instructions);
-        CodeMatcher codeMatcher = new(code);
+        if (!TryFindSwimmingRestrictionInsertionPoint(code, methodName, out CodeMatcher codeMatcher))
+        {
+            return code;
+        }
+
+        object branchTarget = codeMatcher.InstructionAt(-1).operand;
+        List<CodeInstruction> insertedInstructions = new(guardInstructions)
+        {
+            new(OpCodes.Brfalse, branchTarget)
+        };
+
+        ServerSyncModTemplatePlugin.ServerSyncModTemplateLogger.LogDebug($"Applied water equipment bypass transpiler to {methodName}.");
+        return codeMatcher
+            .InsertAndAdvance(insertedInstructions)
+            .InstructionEnumeration();
+    }
+
+    private static bool TryFindSwimmingRestrictionInsertionPoint(List<CodeInstruction> code, string methodName, out CodeMatcher codeMatcher)
+    {
+        codeMatcher = new CodeMatcher(code);
         codeMatcher.MatchStartForward(SwimmingRestrictionPattern);
         if (!codeMatcher.IsValid)
         {
-            ServerSyncModTemplatePlugin.ServerSyncModTemplateLogger.LogWarning($"Failed to locate swimming item restriction in {methodName}. Leaving original instructions untouched.");
-            return code;
+            ServerSyncModTemplatePlugin.ServerSyncModTemplateLogger.LogWarning(
+                $"Failed to locate swimming item restriction in {methodName}. Water equipment bypass for this method is disabled; vanilla swimming restrictions remain.");
+            return false;
         }
 
         codeMatcher.Advance(SwimmingRestrictionInstructionCount);
         if (!codeMatcher.IsValid)
         {
-            ServerSyncModTemplatePlugin.ServerSyncModTemplateLogger.LogWarning($"Failed to advance transpiler cursor in {methodName}. Leaving original instructions untouched.");
-            return code;
+            ServerSyncModTemplatePlugin.ServerSyncModTemplateLogger.LogWarning(
+                $"Failed to advance water equipment transpiler cursor in {methodName}. Water equipment bypass for this method is disabled; vanilla swimming restrictions remain.");
+            return false;
         }
 
-        object branchTarget = codeMatcher.InstructionAt(-1).operand;
-        return codeMatcher
-            .InsertAndAdvance(
-                new[]
-                {
-                    new CodeInstruction(firstArgumentLoadOpCode),
-                    new CodeInstruction(secondArgumentLoadOpCode),
-                    Transpilers.EmitDelegate(shouldKeepWaterRestriction),
-                    new CodeInstruction(OpCodes.Brfalse, branchTarget)
-                })
-            .InstructionEnumeration();
+        return true;
     }
 }

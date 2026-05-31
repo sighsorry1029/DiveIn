@@ -75,7 +75,22 @@ public partial class ServerSyncModTemplatePlugin
 
     private void DisposeMonsterDiveYamlWatcher()
     {
-        _monsterDiveYamlWatcher?.Dispose();
+        if (_monsterDiveYamlSync != null)
+        {
+            _monsterDiveYamlSync.ValueChanged -= OnMonsterDiveYamlValueChanged;
+        }
+
+        ConfigSync.SourceOfTruthChanged -= OnMonsterDiveSourceOfTruthChanged;
+        if (_monsterDiveYamlWatcher == null)
+        {
+            return;
+        }
+
+        _monsterDiveYamlWatcher.Changed -= ReadMonsterDiveYamlValues;
+        _monsterDiveYamlWatcher.Created -= ReadMonsterDiveYamlValues;
+        _monsterDiveYamlWatcher.Renamed -= ReadMonsterDiveYamlValues;
+        _monsterDiveYamlWatcher.Dispose();
+        _monsterDiveYamlWatcher = null!;
     }
 
     private void ReadMonsterDiveYamlValues(object sender, FileSystemEventArgs e)
@@ -86,6 +101,7 @@ public partial class ServerSyncModTemplatePlugin
             return;
         }
 
+        _lastMonsterDiveYamlReloadTime = now;
         lock (_reloadLock)
         {
             if (!ConfigSync.IsSourceOfTruth)
@@ -104,8 +120,6 @@ public partial class ServerSyncModTemplatePlugin
                 ServerSyncModTemplateLogger.LogError($"Error reloading monster dive YAML: {ex.Message}");
             }
         }
-
-        _lastMonsterDiveYamlReloadTime = now;
     }
 
     private void OnMonsterDiveSourceOfTruthChanged(bool isSourceOfTruth)

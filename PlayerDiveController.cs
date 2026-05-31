@@ -54,12 +54,17 @@ internal static class PlayerDiveUtils
 internal sealed class PlayerDiveController : MonoBehaviour
 {
     private const float HeadUnderwaterTolerance = 0.01f;
-    internal const float DefaultSwimDepth = 1.4f;
-    private const float DivingSwimDepth = 2.5f;
+    private const float MinimumSurfaceSwimDepth = 0.1f;
+    private const float DivingSwimDepthOffset = 1.1f;
     private const float BottomAscendDepthStep = 0.75f;
-
+    private const float CombatMovementSuppressionDuration = 0.1f;
+    private float _surfaceSwimDepth = 2f;
     private bool _underwaterMovementActive;
-    private float _appliedSwimSpeedMultiplier = 1f;
+    private bool _fastSwimEnabled;
+    private bool _hasSwimSpeedOverride;
+    private float _originalSwimSpeed;
+    private float _activeSwimRunSpeedMultiplier = 1f;
+    private float _combatMovementSuppressedUntilTime;
     private int _swimmingUpdateContextDepth;
     private int _swimmingUpdateContextFrame = -1;
 
@@ -82,7 +87,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
         }
 
         LocalInstance = this;
-        Player.m_swimDepth = DefaultSwimDepth;
+        _surfaceSwimDepth = Mathf.Max(MinimumSurfaceSwimDepth, Player.m_swimDepth);
     }
 
     private void OnDestroy()
@@ -96,6 +101,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
     internal void DisableUnderwaterMovement()
     {
         _underwaterMovementActive = false;
+        _fastSwimEnabled = false;
         ResetSwimDepthToDefault();
         ResetSwimSpeedOverride();
     }
@@ -110,7 +116,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
 
     internal void ResetSwimDepthToDefault()
     {
-        Player.m_swimDepth = DefaultSwimDepth;
+        Player.m_swimDepth = _surfaceSwimDepth;
     }
 
     internal bool CanDive()
@@ -161,7 +167,43 @@ internal sealed class PlayerDiveController : MonoBehaviour
 
     internal bool ShouldShowDiveKeyHints()
     {
+        return ShouldTreatAsSwimming();
+    }
+
+    internal bool ShouldTreatAsSwimming()
+    {
         return Player.InWater() && (Player.IsSwimming() || ShouldForceSwimming());
+    }
+
+    internal bool IsFastSwimEnabled()
+    {
+        return ServerSyncModTemplatePlugin.IsSwimRunEnabled() && _fastSwimEnabled;
+    }
+
+    internal void UpdateFastSwimToggle()
+    {
+        if (!ShouldShowDiveKeyHints() || !ServerSyncModTemplatePlugin.IsSwimRunEnabled())
+        {
+            _fastSwimEnabled = false;
+            return;
+        }
+
+        if (ZInput.GetButtonDown("Run") || ZInput.GetButtonDown("JoyRun"))
+        {
+            _fastSwimEnabled = !_fastSwimEnabled;
+        }
+    }
+
+    internal void SuppressMovementForCombat()
+    {
+        _combatMovementSuppressedUntilTime = Mathf.Max(
+            _combatMovementSuppressedUntilTime,
+            Time.time + CombatMovementSuppressionDuration);
+    }
+
+    internal bool IsMovementSuppressedForCombat()
+    {
+        return Time.time <= _combatMovementSuppressedUntilTime;
     }
 
     internal bool ShouldForceDive()
@@ -179,12 +221,12 @@ internal sealed class PlayerDiveController : MonoBehaviour
 
     internal bool IsUnderSurface()
     {
-        return Player.m_swimDepth > DefaultSwimDepth;
+        return Player.m_swimDepth > _surfaceSwimDepth + HeadUnderwaterTolerance;
     }
 
     internal bool IsDiving()
     {
-        return Player.m_swimDepth > DivingSwimDepth;
+        return Player.m_swimDepth > _surfaceSwimDepth + DivingSwimDepthOffset;
     }
 
     internal bool IsSurfacing()
@@ -194,8 +236,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
 
     internal bool IsIdleInWater()
     {
-        return Player.InWater()
-               && (Player.IsSwimming() || ShouldForceSwimming())
+        return ShouldTreatAsSwimming()
                && Player.GetVelocity().magnitude < 1f;
     }
 
@@ -256,19 +297,15 @@ internal sealed class PlayerDiveController : MonoBehaviour
         }
     }
 
-    internal void ApplyDepthScaledSwimDrain(float dt)
+    internal void ApplyExtraSwimStaminaDrain(float dt)
     {
-        float drainMultiplier = GetDepthScaledSwimDrainMultiplier();
+        float drainMultiplier = GetExtraSwimStaminaDrainMultiplier();
         if (drainMultiplier <= 1f)
         {
             return;
         }
 
-        float skillFactor = Player.m_skills.GetSkillFactor(Skills.SkillType.Swim);
-        float staminaDrain = Mathf.Lerp(Player.m_swimStaminaDrainMinSkill, Player.m_swimStaminaDrainMaxSkill, skillFactor);
-        staminaDrain += staminaDrain * Player.GetEquipmentSwimStaminaModifier();
-        Player.m_seman.ModifySwimStaminaUsage(staminaDrain, ref staminaDrain);
-
+        float staminaDrain = GetModifiedSwimStaminaDrain();
         float extraDrainMultiplier = drainMultiplier - 1f;
         if (extraDrainMultiplier <= 0f)
         {
@@ -281,37 +318,58 @@ internal sealed class PlayerDiveController : MonoBehaviour
     internal void UpdateSwimSpeed()
     {
         ResetSwimSpeedOverride();
-        float speedMultiplier = GetSwimSpeedMultiplier();
+        float skillSpeedMultiplier = GetSwimSkillSpeedMultiplier();
+        float runSpeedMultiplier = GetSwimRunSpeedMultiplier();
+        _activeSwimRunSpeedMultiplier = runSpeedMultiplier;
+
+        float speedMultiplier = skillSpeedMultiplier * runSpeedMultiplier;
         if (Mathf.Approximately(speedMultiplier, 1f))
         {
             return;
         }
 
+        _originalSwimSpeed = Player.m_swimSpeed;
+        _hasSwimSpeedOverride = true;
         Player.m_swimSpeed *= speedMultiplier;
-        _appliedSwimSpeedMultiplier = speedMultiplier;
     }
 
     internal void ResetSwimSpeedOverride()
     {
-        if (Mathf.Approximately(_appliedSwimSpeedMultiplier, 1f))
+        if (!_hasSwimSpeedOverride)
         {
+            _activeSwimRunSpeedMultiplier = 1f;
             return;
         }
 
-        Player.m_swimSpeed /= _appliedSwimSpeedMultiplier;
-        _appliedSwimSpeedMultiplier = 1f;
+        Player.m_swimSpeed = _originalSwimSpeed;
+        _hasSwimSpeedOverride = false;
+        _activeSwimRunSpeedMultiplier = 1f;
     }
 
-    private float GetSwimSpeedMultiplier()
+    private float GetSwimSkillSpeedMultiplier()
     {
-        if (ZInput.GetButton("Run") || ZInput.GetButton("JoyRun"))
+        float swimSkillFactor = Player.m_skills.GetSkillFactor(Skills.SkillType.Swim);
+        float maxSkillMultiplier = Mathf.Max(1f, ServerSyncModTemplatePlugin._playerSwimSkillSpeedMultiplier.Value);
+        return Mathf.Lerp(1f, maxSkillMultiplier, swimSkillFactor);
+    }
+
+    private float GetSwimRunSpeedMultiplier()
+    {
+        if (!IsFastSwimEnabled() || !Player.HaveStamina())
         {
-            float maxSpeedMultiplier = Mathf.Max(1f, ServerSyncModTemplatePlugin._playerSwimRunSpeedMultiplier.Value);
-            float swimSkillFactor = Player.m_skills.GetSkillFactor(Skills.SkillType.Swim);
-            return Mathf.Lerp(1f, maxSpeedMultiplier, Mathf.Pow(swimSkillFactor, 1.5f));
+            return 1f;
         }
 
-        return 1f;
+        return Mathf.Max(1f, ServerSyncModTemplatePlugin._playerSwimRunSpeedMultiplier.Value);
+    }
+
+    private float GetModifiedSwimStaminaDrain()
+    {
+        float skillFactor = Player.m_skills.GetSkillFactor(Skills.SkillType.Swim);
+        float staminaDrain = Mathf.Lerp(Player.m_swimStaminaDrainMinSkill, Player.m_swimStaminaDrainMaxSkill, skillFactor);
+        staminaDrain += staminaDrain * Player.GetEquipmentSwimStaminaModifier();
+        Player.m_seman.ModifySwimStaminaUsage(staminaDrain, ref staminaDrain);
+        return staminaDrain;
     }
 
     internal void Dive(float dt, bool ascend, out Vector3? defaultMoveDir)
@@ -325,18 +383,18 @@ internal sealed class PlayerDiveController : MonoBehaviour
 
         Vector3 diveVelocity = CalculateSwimVelocity();
         float newDepth = Player.m_swimDepth - (diveVelocity.y * dt);
-        Player.m_swimDepth = Mathf.Max(newDepth, DefaultSwimDepth);
+        Player.m_swimDepth = Mathf.Max(newDepth, _surfaceSwimDepth);
     }
 
     private void EnsureAscendTargetFromBottom()
     {
         float currentLiquidDepth = Player.InLiquidDepth();
-        if (currentLiquidDepth <= DefaultSwimDepth || !UnderwaterDepthUtils.IsAtUnderwaterBottom(Player))
+        if (currentLiquidDepth <= _surfaceSwimDepth || !UnderwaterDepthUtils.IsAtUnderwaterBottom(Player))
         {
             return;
         }
 
-        float ascendTargetDepth = Mathf.Max(DefaultSwimDepth, currentLiquidDepth - BottomAscendDepthStep);
+        float ascendTargetDepth = Mathf.Max(_surfaceSwimDepth, currentLiquidDepth - BottomAscendDepthStep);
         if (Player.m_swimDepth > ascendTargetDepth)
         {
             Player.m_swimDepth = ascendTargetDepth;
@@ -347,7 +405,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
 
     private void ClampSwimDepthForBottomContact()
     {
-        Player.m_swimDepth = UnderwaterDepthUtils.ClampDepthAboveBottom(Player, Player.m_swimDepth, DefaultSwimDepth);
+        Player.m_swimDepth = UnderwaterDepthUtils.ClampDepthAboveBottom(Player, Player.m_swimDepth, _surfaceSwimDepth);
     }
 
     private Vector3 GetDiveDirection(bool ascend)
@@ -387,22 +445,15 @@ internal sealed class PlayerDiveController : MonoBehaviour
         return velocity;
     }
 
-    private float GetDepthScaledSwimDrainMultiplier()
+    private float GetExtraSwimStaminaDrainMultiplier()
     {
-        float maxMultiplier = Mathf.Max(1f, ServerSyncModTemplatePlugin._waterDepthStaminaDrainMaxMultiplier.Value);
-        if (maxMultiplier <= 1f)
-        {
-            return 1f;
-        }
+        return GetDepthSwimStaminaDrainMultiplier() * Mathf.Max(1f, _activeSwimRunSpeedMultiplier);
+    }
 
-        float fullDepth = Mathf.Max(0.25f, ServerSyncModTemplatePlugin._waterDepthStaminaDrainFull.Value);
-        float startDepth = Mathf.Clamp(ServerSyncModTemplatePlugin._waterDepthStaminaDrainStart.Value, 0f, fullDepth);
-        if (Player.m_swimDepth <= startDepth)
-        {
-            return 1f;
-        }
-
-        float t = Mathf.InverseLerp(startDepth, fullDepth, Player.m_swimDepth);
-        return Mathf.SmoothStep(1f, maxMultiplier, t);
+    private float GetDepthSwimStaminaDrainMultiplier()
+    {
+        float percentPerMeter = Mathf.Max(0f, ServerSyncModTemplatePlugin._waterDepthStaminaDrainMultiplier.Value);
+        float swimDepth = Mathf.Max(0f, Player.InLiquidDepth());
+        return 1f + swimDepth * percentPerMeter / 100f;
     }
 }
