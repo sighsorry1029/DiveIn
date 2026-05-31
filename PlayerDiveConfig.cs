@@ -8,7 +8,9 @@ namespace ServerSyncModTemplate;
 
 public partial class ServerSyncModTemplatePlugin
 {
-    internal const float DefaultUnderwaterColorDarknessFactor = 0.02f;
+    internal const float DefaultUnderwaterDarknessFactor = 2f;
+    internal const float DefaultMinimumUnderwaterDarkness = 0f;
+    internal const float DefaultMaximumUnderwaterDarkness = 1f;
     internal const float DefaultUnderwaterVisibilityFalloff = 0f;
     internal const float DefaultMinimumUnderwaterMurkiness = 0.05f;
     internal const float DefaultMaximumUnderwaterMurkiness = 1f;
@@ -20,6 +22,15 @@ public partial class ServerSyncModTemplatePlugin
     internal static ConfigEntry<float> _waterDepthStaminaDrainFull = null!;
     internal static ConfigEntry<float> _waterDepthStaminaDrainMaxMultiplier = null!;
     internal static ConfigEntry<float> _playerSwimRunSpeedMultiplier = null!;
+    internal static ConfigEntry<KeyboardShortcut> _playerDiveAscendShortcut = null!;
+    internal static ConfigEntry<KeyboardShortcut> _playerDiveDescendShortcut = null!;
+    internal static ConfigEntry<Toggle> _enableUnderwaterVisualStyling = null!;
+    internal static ConfigEntry<float> _underwaterDarknessFactor = null!;
+    internal static ConfigEntry<float> _minimumUnderwaterDarkness = null!;
+    internal static ConfigEntry<float> _maximumUnderwaterDarkness = null!;
+    internal static ConfigEntry<float> _underwaterVisibilityFalloff = null!;
+    internal static ConfigEntry<float> _minimumUnderwaterMurkiness = null!;
+    internal static ConfigEntry<float> _maximumUnderwaterMurkiness = null!;
 
     private static readonly object WaterEquipmentBlacklistLock = new();
     private static string _lastWaterEquipmentBlacklistRaw = string.Empty;
@@ -28,7 +39,7 @@ public partial class ServerSyncModTemplatePlugin
     private void InitializePlayerDiveConfig()
     {
         _waterEquipmentBlacklist = config(
-            "2a - Player Diving",
+            "2 - Player Diving",
             "Water Equipment Blacklist",
             "",
             new ConfigDescription(
@@ -36,7 +47,7 @@ public partial class ServerSyncModTemplatePlugin
                 null,
                 new ConfigurationManagerAttributes { Order = 100 }));
         _waterStaminaRegenRateMultiplier = config(
-            "2a - Player Diving",
+            "2 - Player Diving",
             "Water Stamina Regen Rate",
             0.5f,
             new ConfigDescription(
@@ -44,57 +55,123 @@ public partial class ServerSyncModTemplatePlugin
                 new AcceptableValueRange<float>(0f, 2f),
                 new ConfigurationManagerAttributes { Order = 99 }));
         _waterDepthStaminaDrainStart = config(
-            "2a - Player Diving",
+            "2 - Player Diving",
             "Water Depth Stamina Drain Start",
-            2.5f,
+            3f,
             new ConfigDescription(
                 "Depth in meters below the surface where extra swim stamina drain begins.",
                 new AcceptableValueRange<float>(0f, 50f),
                 new ConfigurationManagerAttributes { Order = 98 }));
         _waterDepthStaminaDrainFull = config(
-            "2a - Player Diving",
+            "2 - Player Diving",
             "Water Depth Stamina Drain Full",
             30f,
             new ConfigDescription(
                 "Depth in meters below the surface where the maximum extra swim stamina drain multiplier is reached.",
-                new AcceptableValueRange<float>(0.25f, 100f),
+                new AcceptableValueRange<float>(0.25f, 300f),
                 new ConfigurationManagerAttributes { Order = 97 }));
         _waterDepthStaminaDrainMaxMultiplier = config(
-            "2a - Player Diving",
+            "2 - Player Diving",
             "Water Depth Stamina Drain Max Multiplier",
-            2f,
+            1.5f,
             new ConfigDescription(
                 "Maximum multiplier applied to vanilla moving swim stamina drain at or below the full depth.",
                 new AcceptableValueRange<float>(1f, 5f),
                 new ConfigurationManagerAttributes { Order = 96 }));
         _playerSwimRunSpeedMultiplier = config(
-            "2a - Player Diving",
+            "2 - Player Diving",
             "Swim Run Speed Multiplier",
             1.5f,
             new ConfigDescription(
-                "Multiplier applied to vanilla base swim speed while holding the run key underwater. 1 matches vanilla swim speed, 1.5 matches swim speed 3 with vanilla base swim speed 2.",
+                "Final swim speed while swimming and holding the run key = base swim speed x [1 + (this value - 1) x (Swim skill level / 100)^1.5].",
                 new AcceptableValueRange<float>(1f, 3f),
                 new ConfigurationManagerAttributes { Order = 95 }));
-    }
-
-    internal static bool IsPlayerDivingEnabled()
-    {
-        return true;
-    }
-
-    internal static bool IsUnderwaterCameraFollowEnabled()
-    {
-        return IsPlayerDiveEnvAllowed();
+        _playerDiveAscendShortcut = config(
+            "2 - Player Diving",
+            "Dive Ascend Key",
+            new KeyboardShortcut(KeyCode.Space),
+            new ConfigDescription(
+                "Client-side key used to ascend while swimming underwater.",
+                new AcceptableShortcuts(),
+                new ConfigurationManagerAttributes { Order = 110 }),
+            synchronizedSetting: false);
+        _playerDiveDescendShortcut = config(
+            "2 - Player Diving",
+            "Dive Descend Key",
+            new KeyboardShortcut(KeyCode.LeftControl),
+            new ConfigDescription(
+                "Client-side key used to descend while swimming.",
+                new AcceptableShortcuts(),
+                new ConfigurationManagerAttributes { Order = 109 }),
+            synchronizedSetting: false);
+        _enableUnderwaterVisualStyling = config(
+            "3 - Underwater Visuals",
+            "Enable Underwater Visual Styling",
+            Toggle.On,
+            new ConfigDescription(
+                "Whether underwater fog and reversed water surface styling are applied while submerged.",
+                null,
+                new ConfigurationManagerAttributes { Order = 94 }),
+            synchronizedSetting: false);
+        _underwaterDarknessFactor = config(
+            "3 - Underwater Visuals",
+            "Darkness Factor",
+            DefaultUnderwaterDarknessFactor,
+            new ConfigDescription(
+                "How quickly underwater darkness increases as swim depth increases. Values are entered as percent-style per-meter amounts, so 3.3 means 0.033 internally.",
+                new AcceptableValueRange<float>(0f, 10f),
+                new ConfigurationManagerAttributes { Order = 93 }),
+            synchronizedSetting: false);
+        _minimumUnderwaterDarkness = config(
+            "3 - Underwater Visuals",
+            "Minimum Darkness",
+            DefaultMinimumUnderwaterDarkness,
+            new ConfigDescription(
+                "Minimum underwater darkness regardless of depth. 0 keeps shallow water at full brightness, 1 makes all underwater visuals fully dark.",
+                new AcceptableValueRange<float>(0f, 1f),
+                new ConfigurationManagerAttributes { Order = 92 }),
+            synchronizedSetting: false);
+        _maximumUnderwaterDarkness = config(
+            "3 - Underwater Visuals",
+            "Maximum Darkness",
+            DefaultMaximumUnderwaterDarkness,
+            new ConfigDescription(
+                "Maximum underwater darkness regardless of depth. 0 disables darkening, 1 allows full darkness.",
+                new AcceptableValueRange<float>(0f, 1f),
+                new ConfigurationManagerAttributes { Order = 91 }),
+            synchronizedSetting: false);
+        _underwaterVisibilityFalloff = config(
+            "3 - Underwater Visuals",
+            "Murkiness Factor",
+            DefaultUnderwaterVisibilityFalloff,
+            new ConfigDescription(
+                "How quickly underwater murkiness increases as swim depth increases. Values are entered as percent-style per-meter amounts, so 3.3 means 0.033 internally.",
+                new AcceptableValueRange<float>(0f, 10f),
+                new ConfigurationManagerAttributes { Order = 90 }),
+            synchronizedSetting: false);
+        _minimumUnderwaterMurkiness = config(
+            "3 - Underwater Visuals",
+            "Minimum Murkiness",
+            DefaultMinimumUnderwaterMurkiness,
+            new ConfigDescription(
+                "Minimum underwater murkiness regardless of depth.",
+                new AcceptableValueRange<float>(0f, 1f),
+                new ConfigurationManagerAttributes { Order = 89 }),
+            synchronizedSetting: false);
+        _maximumUnderwaterMurkiness = config(
+            "3 - Underwater Visuals",
+            "Maximum Murkiness",
+            DefaultMaximumUnderwaterMurkiness,
+            new ConfigDescription(
+                "Maximum underwater murkiness regardless of depth.",
+                new AcceptableValueRange<float>(0f, 1f),
+                new ConfigurationManagerAttributes { Order = 88 }),
+            synchronizedSetting: false);
     }
 
     internal static bool IsUnderwaterVisualStylingEnabled()
     {
-        return IsPlayerDiveEnvAllowed();
-    }
-
-    internal static bool IsUnderwaterVisualDebugLoggingEnabled()
-    {
-        return false;
+        return _enableUnderwaterVisualStyling.Value == Toggle.On;
     }
 
     internal static float GetUnderwaterCameraMinWaterDistance()
@@ -102,9 +179,90 @@ public partial class ServerSyncModTemplatePlugin
         return DefaultUnderwaterCameraMinWaterDistance;
     }
 
-    internal static bool IsPlayerDiveEnvAllowed()
+    internal static float GetUnderwaterDarknessFactor()
     {
-        return true;
+        return Mathf.Max(0f, _underwaterDarknessFactor.Value) * 0.01f;
+    }
+
+    internal static float GetMinimumUnderwaterDarkness()
+    {
+        return Mathf.Clamp(_minimumUnderwaterDarkness.Value, 0f, 1f);
+    }
+
+    internal static float GetMaximumUnderwaterDarkness()
+    {
+        return Mathf.Max(GetMinimumUnderwaterDarkness(), Mathf.Clamp(_maximumUnderwaterDarkness.Value, 0f, 1f));
+    }
+
+    internal static float GetUnderwaterVisibilityFalloff()
+    {
+        return Mathf.Max(0f, _underwaterVisibilityFalloff.Value) * 0.01f;
+    }
+
+    internal static float GetMinimumUnderwaterMurkiness()
+    {
+        return Mathf.Clamp(_minimumUnderwaterMurkiness.Value, 0f, 5f);
+    }
+
+    internal static float GetMaximumUnderwaterMurkiness()
+    {
+        return Mathf.Max(GetMinimumUnderwaterMurkiness(), _maximumUnderwaterMurkiness.Value);
+    }
+
+    internal static bool IsDiveAscendInputHeld()
+    {
+        return (_playerDiveAscendShortcut?.Value.IsKeyHeld() ?? false) || ZInput.GetButton("JoyJump");
+    }
+
+    internal static bool IsDiveDescendInputHeld()
+    {
+        return (_playerDiveDescendShortcut?.Value.IsKeyHeld() ?? false) || ZInput.GetButton("JoyCrouch");
+    }
+
+    internal static string GetDiveAscendKeyHint()
+    {
+        return FormatShortcutForKeyHint(_playerDiveAscendShortcut?.Value ?? new KeyboardShortcut(KeyCode.Space));
+    }
+
+    internal static string GetDiveDescendKeyHint()
+    {
+        return FormatShortcutForKeyHint(_playerDiveDescendShortcut?.Value ?? new KeyboardShortcut(KeyCode.LeftControl));
+    }
+
+    private static string FormatShortcutForKeyHint(KeyboardShortcut shortcut)
+    {
+        if (shortcut.MainKey == KeyCode.None)
+        {
+            return "None";
+        }
+
+        List<string> keys = shortcut.Modifiers
+            .Where(key => key != KeyCode.None)
+            .Select(FormatKeyCodeForHint)
+            .ToList();
+        keys.Add(FormatKeyCodeForHint(shortcut.MainKey));
+        return string.Join(" + ", keys);
+    }
+
+    private static string FormatKeyCodeForHint(KeyCode key)
+    {
+        return key switch
+        {
+            KeyCode.LeftControl => "Left Ctrl",
+            KeyCode.RightControl => "Right Ctrl",
+            KeyCode.LeftShift => "Left Shift",
+            KeyCode.RightShift => "Right Shift",
+            KeyCode.LeftAlt => "Left Alt",
+            KeyCode.RightAlt => "Right Alt",
+            KeyCode.Mouse0 => "Mouse-1",
+            KeyCode.Mouse1 => "Mouse-2",
+            KeyCode.Mouse2 => "Mouse-3",
+            KeyCode.Mouse3 => "Mouse-4",
+            KeyCode.Mouse4 => "Mouse-5",
+            KeyCode.Mouse5 => "Mouse-6",
+            KeyCode.Mouse6 => "Mouse-7",
+            _ => key.ToString()
+        };
     }
 
     internal static bool IsWaterRestrictedItem(ItemDrop.ItemData? item)
@@ -162,4 +320,5 @@ public partial class ServerSyncModTemplatePlugin
             _lastWaterEquipmentBlacklistRaw = raw;
         }
     }
+
 }

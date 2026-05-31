@@ -1,38 +1,28 @@
 # DiveIn
 
-`DiveIn` is a Valheim underwater expansion mod. It adds player diving, underwater camera and visual handling, relaxed equipment restrictions in water, and YAML-driven monster dive AI.
+Adds diving and swimming for players and configured creatures.<br>
 
-Current version: `1.0.0`
+Normally mobs can't follow you underwater. So players with diving mod players can just attack mobs from above or below without getting hit.
+This mod changes that. <br>Also added a diving mechanic for players with configurable stamina drain according to depth
 
-## Features
+![](https://i.ibb.co/xKPFy4bv/serpentchase.gif) <br>
+![](https://i.ibb.co/pHZrL1W/serpentchase2.gif) <br>
+Configured mobs can attack you! No more hiding under their bellies.
 
-### 1. Player Diving
+![](https://i.ibb.co/tpjzD9NN/Idle.gif) <br>
+![](https://i.ibb.co/hxdbQ6dg/idle2.gif) <br>
+Idle mobs would swim within the configured range
 
-- Press `Crouch` while swimming to dive downward.
-- Press `Jump` while below the surface to ascend.
-- Hold `Run` underwater to swim faster.
-- Diving is blocked in very shallow water or when the player is effectively grounded.
-- Player diving is handled locally, so each client controls diving for their own character.
+![](https://i.ibb.co/YBx60Bsw/fishchase.gif) <br>
+Recommend to use with RtDOcean. There is configured sample for it.
 
-### 2. Underwater Stamina Tuning
+### Player Diving
 
 - Unlike vanilla Valheim, stamina regeneration while swimming or diving can be enabled through config.
-- Extra stamina drain can scale with depth.
-- With default settings, deeper water becomes more expensive than staying near the surface.
+- Extra stamina drain can scale with depth. Deeper water becomes more expensive than staying near the surface.
+- Use equipment in water except that is in blacklist.
 
-### 3. Relaxed Equipment Restrictions in Water
-
-- The mod bypasses vanilla swimming equipment restrictions for the local player by default.
-- Most equipment that vanilla blocks while swimming can still be used underwater.
-- Items listed in `Water Equipment Blacklist` keep the vanilla restriction.
-
-### 4. Underwater Camera and Visuals
-
-- Adjusts camera follow behavior so the camera stays usable below the surface.
-- Changes fog color and density underwater for a clearer submerged look.
-- Applies water-surface rendering fixes to reduce below-surface visual glitches.
-
-### 5. Monster Dive AI
+### Creature Diving
 
 - Configured monster prefabs stop avoiding water and can navigate underwater.
 - Idle monsters use passive depth profiles and slowly drift within their assigned depth range.
@@ -40,114 +30,115 @@ Current version: `1.0.0`
 - Underwater pathing uses route checks and steering avoidance samples instead of blindly forcing success.
 - A single `Dive AI Quality` slider trades CPU cost for smoother underwater movement.
 
-### 6. Server Sync and Hot Reload
-
-- Main gameplay config values are synchronized through `ServerSync`.
-- Monster dive YAML data is also synchronized from the server authority.
-- Clients with a different `DiveIn` version are disconnected.
-- Both the `cfg` file and monster YAML file are watched and reloaded on change.
-
-## Installation
-
-### Requirement
-
-- `BepInExPack Valheim 5.4.2202` or newer
-
-### Install Steps
-
-1. Place `DiveIn.dll` in `BepInEx/plugins`.
-2. Launch the game once.
-3. Confirm that these files are created:
-
-- `BepInEx/config/sighsorry.DiveIn.cfg`
-- `BepInEx/config/DiveIn.yaml`
-
-For multiplayer, the server and all clients must use the same `DiveIn` version.
-
-## Default Controls
-
-- `Crouch`: Dive down
-- `Jump`: Ascend
-- `Run`: Faster underwater movement
-
-## Configuration Files
-
-### `sighsorry.DiveIn.cfg`
-
-Important entries:
-
-- `Lock Configuration`
-  Controls whether synced settings are locked to server admins.
-- `Water Equipment Blacklist`
-  Comma-separated item prefab names that should remain restricted in water.
-- `Water Stamina Regen Rate`
-  Stamina regeneration multiplier while swimming or diving.
-- `Water Depth Stamina Drain Start`
-  Depth where extra swim stamina drain begins.
-- `Water Depth Stamina Drain Full`
-  Depth where the maximum extra drain multiplier is reached.
-- `Water Depth Stamina Drain Max Multiplier`
-  Maximum extra stamina drain multiplier at deep water.
-- `Swim Run Speed Multiplier`
-  Speed multiplier while holding `Run` underwater.
-- `Dive AI Quality`
-  Global quality/performance slider for underwater monster AI.
-
-### `DiveIn.yaml`
+### DiveIn.yaml
 
 This file defines which monsters can dive and what passive depth band each monster uses.
 
-- `global`
-  Global min/max chase depth and swim-depth adjustment speed.
-- `groups`
-  Named passive depth profiles.
-- `prefabs`
-  Exact Valheim monster prefab names assigned to a group.
-
-Default example:
-
-```yaml
-global:
-  swim_depth_min: 0.25
-  swim_depth_max: 30
-  swim_depth_adjust_speed: 2
-
-groups:
-  surface_patrol:
-    passive_min_depth: 0
-    passive_center_depth: 10
-    passive_max_depth: 20
-    prefabs:
-      - Serpent
-      - Leech
-
-  mid_water:
-    passive_min_depth: 0
-    passive_center_depth: 15
-    passive_max_depth: 30
-    prefabs: []
-
-  deep_patrol:
-    passive_min_depth: 10
-    passive_center_depth: 20
-    passive_max_depth: 30
-    prefabs: []
 ```
+# Monster dive configuration for DiveIn.
+# Unknown keys and duplicate keys are treated as errors and keep the previous applied settings.
 
+surface_patrol: # You can use any group name. Add your own groups
+  passive_min_depth: 0 # Shallowest passive dive depth used while the monster has no target and is not alerted.
+  passive_center_depth: 10 # Center depth used by the passive sine-wave swimming pattern.
+  passive_max_depth: 20 # Deepest passive dive depth used while the monster has no target and is not alerted.
+  active_depth_adjust_speed: 2 # How quickly this group adjusts swim depth while alerted or chasing a target.
+  prefabs: # Monster prefab names assigned to this passive profile group.
+    - Leech
+    - Abomination
+    - Serpent
+    - BonemawSerpent
+
+mid_water:
+  passive_min_depth: 0
+  passive_center_depth: 15
+  passive_max_depth: 30
+  active_depth_adjust_speed: 2
+  prefabs: []
+
+deep_patrol:
+  passive_min_depth: 10
+  passive_center_depth: 20
+  passive_max_depth: 30
+  active_depth_adjust_speed: 2
+  prefabs: []
+
+## Mod prefabs sample
+
+mods_surface:
+  passive_min_depth: 0
+  passive_center_depth: 10
+  passive_max_depth: 20
+  active_depth_adjust_speed: 2
+  prefabs:
+    - Neck_RtD
+    - Animal_Dolphin_RtD
+    - Animal_Cod_RtD
+    ...
+```
 Notes:
 
 - If the same prefab appears in multiple groups, only the first assignment is kept.
 - Invalid YAML keeps the previously applied settings.
 - When the server is the source of truth, clients use the synced server YAML instead of their local file.
 
-## Compatibility Notes
+## Config
+```
+[1 - General]
 
-- Player diving, underwater camera handling, and relaxed water equipment restrictions are currently always enabled, with tuning handled through config values.
-- Monster dive AI only applies to configured `MonsterAI`-based prefabs.
-- If `MonsterDB` is detected, extra overlap debug logging can be enabled to inspect field interactions.
+## If on, the configuration is locked and can be changed by server admins only. [Synced with Server]
+# Setting type: Toggle
+# Default value: On
+# Acceptable values: Off, On
+Lock Configuration = On
 
-## License
+[2a - Player Diving]
 
-This project is licensed under `GPL-3.0`.
+## Comma-separated item prefab names that remain restricted in water. Everything not listed is allowed in water by default. Example: BowFineWood,ShieldBronzeBuckler. [Synced with Server]
+# Setting type: String
+# Default value:
+Water Equipment Blacklist =
 
-The player diving implementation includes code derived and modified from `UnderTheSea`, which is also licensed under GPL-3.0.
+## Multiplier applied to vanilla stamina regeneration while swimming or diving in water. 0 matches vanilla swimming behavior (effective stamina regeneration stays at 0), 1 matches vanilla normal non-swimming stamina regeneration timing and rate. [Synced with Server]
+# Setting type: Single
+# Default value: 0.5
+# Acceptable value range: From 0 to 2
+Water Stamina Regen Rate = 0.5
+
+## Depth in meters below the surface where extra swim stamina drain begins. [Synced with Server]
+# Setting type: Single
+# Default value: 3
+# Acceptable value range: From 0 to 50
+Water Depth Stamina Drain Start = 3
+
+## Depth in meters below the surface where the maximum extra swim stamina drain multiplier is reached. [Synced with Server]
+# Setting type: Single
+# Default value: 30
+# Acceptable value range: From 0.25 to 300
+Water Depth Stamina Drain Full = 30
+
+## Maximum multiplier applied to vanilla moving swim stamina drain at or below the full depth. [Synced with Server]
+# Setting type: Single
+# Default value: 1.5
+# Acceptable value range: From 1 to 5
+Water Depth Stamina Drain Max Multiplier = 1.5
+
+## Final swim speed while swimming and holding the run key = base swim speed x [1 + (this value - 1) x (Swim skill level / 100)^1.5]. [Synced with Server]
+# Setting type: Single
+# Default value: 1.5
+# Acceptable value range: From 1 to 3
+Swim Run Speed Multiplier = 1.5
+
+[3 - Performance]
+
+## Single quality slider for underwater AI behavior. 0 = minimum CPU/minimum smoothness, 100 = maximum CPU/maximum smoothness. Internally adjusts route check cache time, steer cache time, cache cell size, and avoidance sample count. [Synced with Server]
+# Setting type: Single
+# Default value: 50
+# Acceptable value range: From 0 to 100
+Dive AI Quality = 50
+```
+
+### Git
+The player diving implementation includes code derived and modified from `UnderTheSea` <br>
+https://github.com/searica/UnderTheSea <br>
+https://github.com/sighsorry1029/DiveIn

@@ -22,19 +22,13 @@ public partial class ServerSyncModTemplatePlugin
         .WithNamingConvention(UnderscoredNamingConvention.Instance)
         .WithDuplicateKeyChecking()
         .Build();
-    private static readonly MonsterDiveGlobalSettings DefaultMonsterDiveGlobalSettings = new(0.25f, 30f, 2f);
 
-    private sealed class MonsterDiveYamlRoot
+    private sealed class MonsterDiveYamlRoot : Dictionary<string, MonsterDiveYamlGroup>
     {
-        public MonsterDiveYamlGlobal Global { get; set; } = new();
-        public Dictionary<string, MonsterDiveYamlGroup> Groups { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-    }
-
-    private sealed class MonsterDiveYamlGlobal
-    {
-        public float SwimDepthMin { get; set; } = DefaultMonsterDiveGlobalSettings.SwimDepthMin;
-        public float SwimDepthMax { get; set; } = DefaultMonsterDiveGlobalSettings.SwimDepthMax;
-        public float SwimDepthAdjustSpeed { get; set; } = DefaultMonsterDiveGlobalSettings.SwimDepthAdjustSpeed;
+        public MonsterDiveYamlRoot()
+            : base(StringComparer.OrdinalIgnoreCase)
+        {
+        }
     }
 
     private sealed class MonsterDiveYamlGroup
@@ -42,27 +36,13 @@ public partial class ServerSyncModTemplatePlugin
         public float PassiveMinDepth { get; set; }
         public float PassiveCenterDepth { get; set; }
         public float PassiveMaxDepth { get; set; }
+        public float? ActiveDepthAdjustSpeed { get; set; }
         public List<string> Prefabs { get; set; } = new();
-    }
-
-    private readonly struct MonsterDiveGlobalSettings
-    {
-        public MonsterDiveGlobalSettings(float swimDepthMin, float swimDepthMax, float swimDepthAdjustSpeed)
-        {
-            SwimDepthMin = swimDepthMin;
-            SwimDepthMax = swimDepthMax;
-            SwimDepthAdjustSpeed = swimDepthAdjustSpeed;
-        }
-
-        public float SwimDepthMin { get; }
-        public float SwimDepthMax { get; }
-        public float SwimDepthAdjustSpeed { get; }
     }
 
     private FileSystemWatcher _monsterDiveYamlWatcher = null!;
     private DateTime _lastMonsterDiveYamlReloadTime;
     private static CustomSyncedValue<string> _monsterDiveYamlSync = null!;
-    private static MonsterDiveGlobalSettings _monsterDiveGlobalSettings = DefaultMonsterDiveGlobalSettings;
 
     private void InitializeMonsterDiveYaml()
     {
@@ -157,17 +137,6 @@ public partial class ServerSyncModTemplatePlugin
         ApplyMonsterDiveYaml(_monsterDiveYamlSync.Value, "synced value changed");
     }
 
-    private static MonsterDiveYamlGroup CreateDefaultGroup(float minDepth, float centerDepth, float maxDepth)
-    {
-        return new MonsterDiveYamlGroup
-        {
-            PassiveMinDepth = minDepth,
-            PassiveCenterDepth = centerDepth,
-            PassiveMaxDepth = maxDepth,
-            Prefabs = new List<string>()
-        };
-    }
-
     private void LoadMonsterDiveYamlFromDisk(bool forceWriteDefaultIfMissing, bool syncToPeers, string reason)
     {
         lock (MonsterDiveYamlLock)
@@ -224,7 +193,6 @@ public partial class ServerSyncModTemplatePlugin
             return false;
         }
 
-        MonsterDiveGlobalSettings globalSettings = NormalizeGlobalSettings(root.Global);
         Dictionary<string, MonsterDiveYamlGroup> definedGroups = GetDefinedGroups(root);
         Dictionary<string, ConfiguredDiveProfile> configuredProfilesByPrefabName = new(StringComparer.OrdinalIgnoreCase);
         foreach (KeyValuePair<string, MonsterDiveYamlGroup> groupEntry in definedGroups)
@@ -232,7 +200,9 @@ public partial class ServerSyncModTemplatePlugin
             string groupName = groupEntry.Key;
             MonsterDiveYamlGroup group = groupEntry.Value;
             PassiveDepthProfile passiveProfile = NormalizePassiveDepthProfile(groupName, group.PassiveMinDepth, group.PassiveCenterDepth, group.PassiveMaxDepth);
-            AddYamlGroupEntries(configuredProfilesByPrefabName, group.Prefabs, groupName, passiveProfile);
+            float activeDepthAdjustSpeed = NormalizeActiveDepthAdjustSpeed(groupName, group.ActiveDepthAdjustSpeed);
+            ConfiguredDiveProfile configuredDiveProfile = new(groupName, passiveProfile, activeDepthAdjustSpeed);
+            AddYamlGroupEntries(configuredProfilesByPrefabName, group.Prefabs, configuredDiveProfile);
         }
 
         if (configuredProfilesByPrefabName.Count == 0)
@@ -242,42 +212,32 @@ public partial class ServerSyncModTemplatePlugin
 
         lock (PrefabSetLock)
         {
-            _monsterDiveGlobalSettings = globalSettings;
             _configuredDiveProfilesByPrefabName = configuredProfilesByPrefabName;
         }
 
         int restoredMonsterCount = RestoreRemovedMonsterDiveFlags();
         ClearRuntimeCaches();
         ServerSyncModTemplateLogger.LogInfo(
-            $"Loaded monster dive YAML ({reason}). global[min={globalSettings.SwimDepthMin:F2}, max={globalSettings.SwimDepthMax:F2}, adjust={globalSettings.SwimDepthAdjustSpeed:F2}], groups={definedGroups.Count}, prefabs={configuredProfilesByPrefabName.Count}, restoredRemovedInstances={restoredMonsterCount}.");
+            $"Loaded monster dive YAML ({reason}). passiveGroups={definedGroups.Count}, prefabs={configuredProfilesByPrefabName.Count}, active[min={ActiveSwimDepthMin:F2}, max={ActiveSwimDepthMax:F2}, defaultAdjust={SwimDepthAdjustSpeed:F2}], restoredRemovedInstances={restoredMonsterCount}.");
         return true;
     }
 
-    private static MonsterDiveGlobalSettings NormalizeGlobalSettings(MonsterDiveYamlGlobal? global)
+    private static float NormalizeActiveDepthAdjustSpeed(string groupName, float? activeDepthAdjustSpeed)
     {
-        if (global == null)
+        if (!activeDepthAdjustSpeed.HasValue)
         {
-            return DefaultMonsterDiveGlobalSettings;
+            return SwimDepthAdjustSpeed;
         }
 
-        float requestedMinDepth = global.SwimDepthMin;
-        float requestedMaxDepth = global.SwimDepthMax;
-        float requestedAdjustSpeed = global.SwimDepthAdjustSpeed;
-        float minDepth = Mathf.Max(0.25f, requestedMinDepth);
-        float maxDepth = Mathf.Max(minDepth, requestedMaxDepth);
-        float adjustSpeed = Mathf.Max(0f, requestedAdjustSpeed);
-
-        if (!Mathf.Approximately(minDepth, requestedMinDepth) ||
-            !Mathf.Approximately(maxDepth, requestedMaxDepth) ||
-            !Mathf.Approximately(adjustSpeed, requestedAdjustSpeed))
+        float requestedAdjustSpeed = activeDepthAdjustSpeed.Value;
+        float normalizedAdjustSpeed = Mathf.Max(0f, requestedAdjustSpeed);
+        if (!Mathf.Approximately(normalizedAdjustSpeed, requestedAdjustSpeed))
         {
             ServerSyncModTemplateLogger.LogWarning(
-                $"Monster dive YAML normalized global values: swim_depth_min {requestedMinDepth.ToString("0.###", CultureInfo.InvariantCulture)} -> {minDepth.ToString("0.###", CultureInfo.InvariantCulture)}, " +
-                $"swim_depth_max {requestedMaxDepth.ToString("0.###", CultureInfo.InvariantCulture)} -> {maxDepth.ToString("0.###", CultureInfo.InvariantCulture)}, " +
-                $"swim_depth_adjust_speed {requestedAdjustSpeed.ToString("0.###", CultureInfo.InvariantCulture)} -> {adjustSpeed.ToString("0.###", CultureInfo.InvariantCulture)}.");
+                $"Monster dive YAML normalized active profile '{groupName}': active_depth_adjust_speed {requestedAdjustSpeed.ToString("0.###", CultureInfo.InvariantCulture)} -> {normalizedAdjustSpeed.ToString("0.###", CultureInfo.InvariantCulture)}.");
         }
 
-        return new MonsterDiveGlobalSettings(minDepth, maxDepth, adjustSpeed);
+        return normalizedAdjustSpeed;
     }
 
     private static PassiveDepthProfile NormalizePassiveDepthProfile(string groupName, float minDepth, float centerDepth, float maxDepth)
@@ -309,17 +269,17 @@ public partial class ServerSyncModTemplatePlugin
     private static Dictionary<string, MonsterDiveYamlGroup> GetDefinedGroups(MonsterDiveYamlRoot root)
     {
         Dictionary<string, MonsterDiveYamlGroup> groups = new(StringComparer.OrdinalIgnoreCase);
-        if (root.Groups == null || root.Groups.Count == 0)
+        if (root.Count == 0)
         {
             return groups;
         }
 
-        foreach (KeyValuePair<string, MonsterDiveYamlGroup> entry in root.Groups)
+        foreach (KeyValuePair<string, MonsterDiveYamlGroup> entry in root)
         {
             string groupName = entry.Key?.Trim() ?? string.Empty;
             if (groupName.Length == 0)
             {
-                ServerSyncModTemplateLogger.LogWarning("Monster dive YAML contains an empty group name under groups:. Skipping it.");
+                ServerSyncModTemplateLogger.LogWarning("Monster dive YAML contains an empty top-level group name. Skipping it.");
                 continue;
             }
 
@@ -329,7 +289,7 @@ public partial class ServerSyncModTemplatePlugin
         return groups;
     }
 
-    private static void AddYamlGroupEntries(Dictionary<string, ConfiguredDiveProfile> configuredProfilesByPrefabName, IEnumerable<string>? mobs, string groupName, PassiveDepthProfile passiveProfile)
+    private static void AddYamlGroupEntries(Dictionary<string, ConfiguredDiveProfile> configuredProfilesByPrefabName, IEnumerable<string>? mobs, ConfiguredDiveProfile configuredDiveProfile)
     {
         if (mobs == null)
         {
@@ -346,11 +306,11 @@ public partial class ServerSyncModTemplatePlugin
 
             if (configuredProfilesByPrefabName.ContainsKey(prefab))
             {
-                ServerSyncModTemplateLogger.LogWarning($"Monster dive YAML duplicate mob '{prefab}' found in {groupName}. Keeping first assignment.");
+                ServerSyncModTemplateLogger.LogWarning($"Monster dive YAML duplicate mob '{prefab}' found in {configuredDiveProfile.GroupName}. Keeping first assignment.");
                 continue;
             }
 
-            configuredProfilesByPrefabName[prefab] = new ConfiguredDiveProfile(groupName, passiveProfile);
+            configuredProfilesByPrefabName[prefab] = configuredDiveProfile;
         }
     }
 
@@ -359,21 +319,22 @@ public partial class ServerSyncModTemplatePlugin
         StringBuilder builder = new();
         builder.AppendLine("# Monster dive configuration for DiveIn.");
         builder.AppendLine("# Unknown keys and duplicate keys are treated as errors and keep the previous applied settings.");
-        builder.AppendLine("global:");
-        builder.AppendLine($"  swim_depth_min: {FormatYamlFloat(DefaultMonsterDiveGlobalSettings.SwimDepthMin)} # Minimum underwater depth allowed while a configured monster actively chases a target.");
-        builder.AppendLine($"  swim_depth_max: {FormatYamlFloat(DefaultMonsterDiveGlobalSettings.SwimDepthMax)} # Maximum underwater depth allowed while a configured monster actively chases a target.");
-        builder.AppendLine($"  swim_depth_adjust_speed: {FormatYamlFloat(DefaultMonsterDiveGlobalSettings.SwimDepthAdjustSpeed)} # How quickly a configured monster adjusts its swim depth toward the requested active target depth.");
         builder.AppendLine();
-        builder.AppendLine("groups:");
-        AppendDefaultGroup(builder, "surface_patrol", 0f, 10f, 20f, includeGroupHeaderComment: true, examplePrefabs: new[] { "Serpent", "Leech" });
+        AppendDefaultGroup(builder, "surface_patrol", 0f, 10f, 20f, SwimDepthAdjustSpeed, includeGroupHeaderComment: true, includeFieldComments: true, examplePrefabs: new[]
+        {
+            "Leech",
+            "Abomination",
+            "Serpent",
+            "BonemawSerpent"
+        });
         builder.AppendLine();
-        AppendDefaultGroup(builder, "mid_water", 0f, 15f, 30f);
+        AppendDefaultGroup(builder, "mid_water", 0f, 15f, 30f, SwimDepthAdjustSpeed);
         builder.AppendLine();
-        AppendDefaultGroup(builder, "deep_patrol", 10f, 20f, 30f);
+        AppendDefaultGroup(builder, "deep_patrol", 10f, 20f, 30f, SwimDepthAdjustSpeed);
         builder.AppendLine();
-        builder.AppendLine("## RtDOcean sample");
+        builder.AppendLine("## Mod prefabs sample");
         builder.AppendLine();
-        AppendDefaultGroup(builder, "rtd_surface", 0f, 10f, 20f, examplePrefabs: new[]
+        AppendDefaultGroup(builder, "mods_surface", 0f, 10f, 20f, SwimDepthAdjustSpeed, examplePrefabs: new[]
         {
             "Neck_RtD",
             "Animal_Dolphin_RtD",
@@ -385,10 +346,29 @@ public partial class ServerSyncModTemplatePlugin
             "BoneSquid_RtD",
             "LuminousLooker_RtD",
             "MurkPod_RtD",
-            "Animal_HumpbackWhale_RtD"
+            "Animal_HumpbackWhale_RtD",
+            "RDB_crocodile",
+            "RDB_white_shark",
+            "RDB_turtle",
+            "Shark_TW",
+            "ArcticSerpent_TW",
+            "SA_Orca",
+            "SA_Dolphin",
+            "SA_WhiteShark",
+            "SA_HumboldtSquid",
+            "SA_LeatherbackSeaTurtle",
+            "SA_RightWhale",
+            "SA_WhaleShark",
+            "SA_BlueShark",
+            "SA_HammerHeadShark",
+            "SA_TigerShark",
+            "SA_BlueTurtle",
+            "SA_GreenTurtle",
+            "SA_RedTurtle",
+            "SA_YellowTurtle"
         });
         builder.AppendLine();
-        AppendDefaultGroup(builder, "rtd_midwater", 0f, 15f, 30f, examplePrefabs: new[]
+        AppendDefaultGroup(builder, "mods_midwater", 0f, 15f, 30f, SwimDepthAdjustSpeed, examplePrefabs: new[]
         {
             "Belzor_RtD",
             "Monster_HammerheadShark_RtD",
@@ -398,46 +378,53 @@ public partial class ServerSyncModTemplatePlugin
             "Monster_Orca_RtD"
         });
         builder.AppendLine();
-        AppendDefaultGroup(builder, "rtd_deep", 10f, 20f, 30f, examplePrefabs: new[]
+        AppendDefaultGroup(builder, "mods_deep", 10f, 20f, 30f, SwimDepthAdjustSpeed, examplePrefabs: new[]
         {
             "Animal_Tuna_RtD",
             "Animal_Squid_RtD"
         });
         builder.AppendLine();
-        AppendDefaultGroup(builder, "rtd_bottom", 20f, 30f, 40f, examplePrefabs: new[]
+        AppendDefaultGroup(builder, "mods_bottom", 20f, 30f, 40f, SwimDepthAdjustSpeed, examplePrefabs: new[]
         {
             "CatFish_RtD",
             "Reptile_RtD",
+            "MirRake_RtD",
             "Animal_Manta_RtD"
         });
         return builder.ToString();
     }
 
-    private static void AppendDefaultGroup(StringBuilder builder, string groupName, float minDepth, float centerDepth, float maxDepth, bool includeGroupHeaderComment = false, IEnumerable<string>? examplePrefabs = null)
+    private static void AppendDefaultGroup(StringBuilder builder, string groupName, float minDepth, float centerDepth, float maxDepth, float activeDepthAdjustSpeed, bool includeGroupHeaderComment = false, bool includeFieldComments = false, IEnumerable<string>? examplePrefabs = null)
     {
         string groupHeaderComment = includeGroupHeaderComment
             ? " # You can use any group name. Add your own groups"
             : string.Empty;
-        builder.AppendLine($"  {groupName}:{groupHeaderComment}");
-        builder.AppendLine($"    passive_min_depth: {FormatYamlFloat(minDepth)} # Shallowest passive dive depth used while the monster has no target and is not alerted.");
-        builder.AppendLine($"    passive_center_depth: {FormatYamlFloat(centerDepth)} # Center depth used by the passive sine-wave swimming pattern.");
-        builder.AppendLine($"    passive_max_depth: {FormatYamlFloat(maxDepth)} # Deepest passive dive depth used while the monster has no target and is not alerted.");
+        string minDepthComment = includeFieldComments ? " # Shallowest passive dive depth used while the monster has no target and is not alerted." : string.Empty;
+        string centerDepthComment = includeFieldComments ? " # Center depth used by the passive sine-wave swimming pattern." : string.Empty;
+        string maxDepthComment = includeFieldComments ? " # Deepest passive dive depth used while the monster has no target and is not alerted." : string.Empty;
+        string activeAdjustComment = includeFieldComments ? " # How quickly this group adjusts swim depth while alerted or chasing a target." : string.Empty;
+        string prefabsComment = includeFieldComments ? " # Monster prefab names assigned to this passive profile group." : string.Empty;
+        builder.AppendLine($"{groupName}:{groupHeaderComment}");
+        builder.AppendLine($"  passive_min_depth: {FormatYamlFloat(minDepth)}{minDepthComment}");
+        builder.AppendLine($"  passive_center_depth: {FormatYamlFloat(centerDepth)}{centerDepthComment}");
+        builder.AppendLine($"  passive_max_depth: {FormatYamlFloat(maxDepth)}{maxDepthComment}");
+        builder.AppendLine($"  active_depth_adjust_speed: {FormatYamlFloat(activeDepthAdjustSpeed)}{activeAdjustComment}");
         if (examplePrefabs != null)
         {
             string[] prefabArray = examplePrefabs.Where(static prefab => !string.IsNullOrWhiteSpace(prefab)).ToArray();
             if (prefabArray.Length > 0)
             {
-                builder.AppendLine("    prefabs: # Monster prefab names assigned to this passive profile group.");
+                builder.AppendLine($"  prefabs:{prefabsComment}");
                 foreach (string prefab in prefabArray)
                 {
-                    builder.AppendLine($"      - {prefab}");
+                    builder.AppendLine($"    - {prefab}");
                 }
 
                 return;
             }
         }
 
-        builder.AppendLine("    prefabs: [] # Monster prefab names assigned to this passive profile group.");
+        builder.AppendLine($"  prefabs: []{prefabsComment}");
     }
 
     private static string FormatYamlFloat(float value)

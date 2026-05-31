@@ -13,13 +13,8 @@ using UnityEngine;
 
 namespace ServerSyncModTemplate;
 
-[BepInPlugin(ModGUID, ModName, ModVersion)]
-public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
+public partial class ServerSyncModTemplatePlugin
 {
-    internal const string ModName = "DiveIn";
-    internal const string ModVersion = "1.0.0";
-    internal const string Author = "sighsorry";
-    private const string ModGUID = $"{Author}.{ModName}";
     private static readonly string ConfigFileName = $"{ModGUID}.cfg";
     private static readonly string ConfigFileFullPath = Paths.ConfigPath + Path.DirectorySeparatorChar + ConfigFileName;
     internal static string ConnectionError = "";
@@ -38,6 +33,10 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
     private DateTime _lastConfigReloadTime;
     private const long RELOAD_DELAY = 10000000;
     private const float PassiveWavePeriodSeconds = 12f;
+    private const float ActiveSwimDepthMin = 0.25f;
+    private const float ActiveSwimDepthMax = 300f;
+    private const float SwimDepthAdjustSpeed = 2f;
+    private const float MinimumAiCacheSeconds = 0.1f;
     private static readonly float[] SteerAngles = { 0f, -35f, 35f, -70f, 70f, -120f, 120f, 180f };
     private static readonly float[] RouteAngles = { 0f, -35f, 35f, -70f, 70f };
 
@@ -91,11 +90,13 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
     {
         public readonly string GroupName;
         public readonly PassiveDepthProfile PassiveDepthProfile;
+        public readonly float ActiveDepthAdjustSpeed;
 
-        public ConfiguredDiveProfile(string groupName, PassiveDepthProfile passiveDepthProfile)
+        public ConfiguredDiveProfile(string groupName, PassiveDepthProfile passiveDepthProfile, float activeDepthAdjustSpeed)
         {
             GroupName = groupName;
             PassiveDepthProfile = passiveDepthProfile;
+            ActiveDepthAdjustSpeed = activeDepthAdjustSpeed;
         }
     }
 
@@ -103,12 +104,14 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
     {
         public readonly MonsterAI MonsterAI;
         public readonly bool AvoidWater;
+        public readonly bool AvoidLand;
         public readonly bool CanSwim;
 
-        public OriginalDiveFlags(MonsterAI monsterAI, bool avoidWater, bool canSwim)
+        public OriginalDiveFlags(MonsterAI monsterAI, bool avoidWater, bool avoidLand, bool canSwim)
         {
             MonsterAI = monsterAI;
             AvoidWater = avoidWater;
+            AvoidLand = avoidLand;
             CanSwim = canSwim;
         }
     }
@@ -133,7 +136,7 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
         _ = ConfigSync.AddLockingConfigEntry(_serverConfigLocked);
 
         _diveAiQuality = config(
-            "3 - Performance",
+            "1 - General",
             "Dive AI Quality",
             50f,
             new ConfigDescription("Single quality slider for underwater AI behavior. 0 = minimum CPU/minimum smoothness, 100 = maximum CPU/maximum smoothness. Internally adjusts route check cache time, steer cache time, cache cell size, and avoidance sample count.", new AcceptableValueRange<float>(0f, 100f)));
@@ -156,7 +159,7 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
 
     private void OnDestroy()
     {
-        UnderwaterVisualState.ResetAll("plugin destroy");
+        UnderwaterVisualState.ResetAll();
         SaveWithRespectToConfigSet();
         _watcher?.Dispose();
         DisposeMonsterDiveYamlWatcher();
@@ -192,7 +195,7 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
             try
             {
                 SaveWithRespectToConfigSet(reload: true);
-                UnderwaterVisualState.ResetAll("config reload");
+                UnderwaterVisualState.ResetAll();
                 ClearRuntimeCaches();
                 ServerSyncModTemplateLogger.LogInfo("Configuration reload complete.");
             }
@@ -274,10 +277,33 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
             monsterAI.m_avoidWater = false;
         }
 
+        EnsureAvoidLandForCurrentDiveState(monsterAI);
+
         Character character = monsterAI.m_character;
         if (character != null && !character.m_canSwim)
         {
             character.m_canSwim = true;
+        }
+    }
+
+    private static void EnsureAvoidLandForCurrentDiveState(MonsterAI monsterAI)
+    {
+        bool underwaterMode = ShouldUseWaterDiveMode(monsterAI);
+        if (underwaterMode)
+        {
+            if (monsterAI.m_avoidLand)
+            {
+                monsterAI.m_avoidLand = false;
+            }
+
+            return;
+        }
+
+        int instanceId = monsterAI.GetInstanceID();
+        if (OriginalDiveFlagsByInstance.TryGetValue(instanceId, out OriginalDiveFlags originalFlags) &&
+            monsterAI.m_avoidLand != originalFlags.AvoidLand)
+        {
+            monsterAI.m_avoidLand = originalFlags.AvoidLand;
         }
     }
 
@@ -298,6 +324,7 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
         OriginalDiveFlagsByInstance[instanceId] = new OriginalDiveFlags(
             monsterAI,
             monsterAI.m_avoidWater,
+            monsterAI.m_avoidLand,
             character != null && character.m_canSwim);
 
         if (OriginalDiveFlagsByInstance.Count > MaxCacheEntries)
@@ -333,6 +360,7 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
             }
 
             monsterAI.m_avoidWater = originalFlags.AvoidWater;
+            monsterAI.m_avoidLand = originalFlags.AvoidLand;
             Character character = monsterAI.m_character;
             if (character != null)
             {
@@ -404,14 +432,8 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
 
     }
 
-    private static float GetPassiveDesiredDepth(MonsterAI monsterAI)
+    private static float GetPassiveDesiredDepth(MonsterAI monsterAI, PassiveDepthProfile profile)
     {
-        if (!TryGetConfiguredDiveProfile(monsterAI, out ConfiguredDiveProfile configuredDiveProfile))
-        {
-            return 0f;
-        }
-
-        PassiveDepthProfile profile = configuredDiveProfile.PassiveDepthProfile;
         int instanceId = Mathf.Abs(monsterAI.GetInstanceID());
         float phasedTime = Time.time + (instanceId % 997) * 0.173f;
         float wave = Mathf.Sin(Mathf.Repeat(phasedTime, PassiveWavePeriodSeconds) / PassiveWavePeriodSeconds * Mathf.PI * 2f);
@@ -422,11 +444,6 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
             : profile.CenterDepth + wave * surfaceAmplitude;
     }
 
-    private static void TryLogOverlapFields(MonsterAI monsterAI, string stage)
-    {
-        // Debug-only overlap logging removed from config surface.
-    }
-
     private static float GetQuality01()
     {
         return Mathf.Clamp01(_diveAiQuality.Value / 100f);
@@ -434,12 +451,12 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
 
     private static float GetRouteCacheSeconds()
     {
-        return Mathf.Lerp(1f, 0f, GetQuality01());
+        return Mathf.Lerp(1f, MinimumAiCacheSeconds, GetQuality01());
     }
 
     private static float GetSteerCacheSeconds()
     {
-        return Mathf.Lerp(1f, 0f, GetQuality01());
+        return Mathf.Lerp(1f, MinimumAiCacheSeconds, GetQuality01());
     }
 
     private static float GetCacheCellSize()
@@ -466,18 +483,32 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
 
     private static SwimDepthGoal UpdateSwimDepthTowardsTarget(MonsterAI monsterAI, Character character, Vector3 point, float dt)
     {
-        float minDepth = _monsterDiveGlobalSettings.SwimDepthMin;
-        float maxDepth = _monsterDiveGlobalSettings.SwimDepthMax;
-
+        TryGetConfiguredDiveProfile(monsterAI, out ConfiguredDiveProfile configuredDiveProfile);
         float liquidLevel = character.GetLiquidLevel();
-        float requestedDepth = liquidLevel - point.y;
         bool passiveDive = IsPassiveDiveState(monsterAI);
-        float desiredDepth = passiveDive ? GetPassiveDesiredDepth(monsterAI) : requestedDepth;
-        bool requestedOutsideRange = passiveDive || requestedDepth < minDepth || requestedDepth > maxDepth;
-        desiredDepth = Mathf.Clamp(desiredDepth, minDepth, maxDepth);
+        float desiredDepth;
+        bool requestedOutsideRange;
+        float adjustSpeed;
+        if (passiveDive)
+        {
+            desiredDepth = GetPassiveDesiredDepth(monsterAI, configuredDiveProfile.PassiveDepthProfile);
+            requestedOutsideRange = true;
+            adjustSpeed = SwimDepthAdjustSpeed;
+        }
+        else
+        {
+            float requestedDepth = liquidLevel - point.y;
+            desiredDepth = Mathf.Clamp(requestedDepth, ActiveSwimDepthMin, ActiveSwimDepthMax);
+            requestedOutsideRange = requestedDepth < ActiveSwimDepthMin || requestedDepth > ActiveSwimDepthMax;
+            adjustSpeed = configuredDiveProfile.ActiveDepthAdjustSpeed;
+        }
+
+        float unclampedBottomDepth = desiredDepth;
+        desiredDepth = ClampSwimDepthForBottomContact(character, desiredDepth);
+        requestedOutsideRange |= desiredDepth < unclampedBottomDepth - 0.001f;
+
         float clampedTargetY = liquidLevel - desiredDepth;
 
-        float adjustSpeed = _monsterDiveGlobalSettings.SwimDepthAdjustSpeed;
         if (adjustSpeed <= 0f)
         {
             character.m_swimDepth = desiredDepth;
@@ -485,8 +516,13 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
         }
 
         float step = adjustSpeed * Mathf.Max(dt, 0.01f);
-        character.m_swimDepth = Mathf.Clamp(Mathf.MoveTowards(character.m_swimDepth, desiredDepth, step), minDepth, maxDepth);
+        character.m_swimDepth = Mathf.MoveTowards(character.m_swimDepth, desiredDepth, step);
         return new SwimDepthGoal(clampedTargetY, requestedOutsideRange);
+    }
+
+    private static float ClampSwimDepthForBottomContact(Character character, float desiredDepth)
+    {
+        return UnderwaterDepthUtils.ClampDepthAboveBottom(character, desiredDepth, ActiveSwimDepthMin);
     }
 
     private static Vector3 BuildSteerDirectionWithAvoidance(BaseAI ai, Character character, Vector3 targetPoint)
@@ -649,7 +685,6 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
             }
 
             EnsureDiveFlags(__instance);
-            TryLogOverlapFields(__instance, "MonsterAI.Awake");
         }
     }
 
@@ -664,7 +699,6 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
             }
 
             EnsureDiveFlags(__instance);
-            TryLogOverlapFields(__instance, "MonsterAI.UpdateAI");
         }
     }
 
@@ -686,7 +720,6 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
 
             // Underwater route check: avoid unconditional true to keep AI target logic consistent.
             __result = HasReasonableUnderwaterRoute(__instance, character, target);
-            TryLogOverlapFields(monsterAI, "BaseAI.HavePath");
             return false;
         }
     }
@@ -708,7 +741,6 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
             }
 
             SwimDepthGoal goal = UpdateSwimDepthTowardsTarget(monsterAI, character, point, dt);
-            TryLogOverlapFields(monsterAI, "BaseAI.MoveTo");
 
             float stopDist = Mathf.Max(dist, run ? 1f : 0.5f);
             float horizontalDist = Utils.DistanceXZ(point, __instance.transform.position);
@@ -789,30 +821,9 @@ public static class KeyboardExtensions
 {
     extension(KeyboardShortcut shortcut)
     {
-        public bool IsKeyDown()
-        {
-            return shortcut.MainKey != KeyCode.None && Input.GetKeyDown(shortcut.MainKey) && shortcut.Modifiers.All(Input.GetKey);
-        }
-
         public bool IsKeyHeld()
         {
             return shortcut.MainKey != KeyCode.None && Input.GetKey(shortcut.MainKey) && shortcut.Modifiers.All(Input.GetKey);
-        }
-    }
-}
-
-public static class ToggleExtentions
-{
-    extension(ServerSyncModTemplatePlugin.Toggle value)
-    {
-        public bool IsOn()
-        {
-            return value == ServerSyncModTemplatePlugin.Toggle.On;
-        }
-
-        public bool IsOff()
-        {
-            return value == ServerSyncModTemplatePlugin.Toggle.Off;
         }
     }
 }

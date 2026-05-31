@@ -95,6 +95,9 @@
         <Reference Include="UnityEngine.CoreModule">
             <HintPath>$(CorlibPath)\UnityEngine.CoreModule.dll</HintPath>
         </Reference>
+        <Reference Include="UnityEngine.PhysicsModule">
+            <HintPath>$(CorlibPath)\UnityEngine.PhysicsModule.dll</HintPath>
+        </Reference>
         <Reference Include="UnityEngine.IMGUIModule">
             <HintPath>$(CorlibPath)\UnityEngine.IMGUIModule.dll</HintPath>
         </Reference>
@@ -113,11 +116,13 @@
         </Reference>
     </ItemGroup>
     <ItemGroup>
-        <Compile Include="LocalizationManager.cs"/>
+        <Compile Include="Plugin.cs"/>
         <Compile Include="MonsterDiveYaml.cs"/>
         <Compile Include="PlayerDiveConfig.cs"/>
         <Compile Include="PlayerDiveController.cs"/>
         <Compile Include="PlayerDiveIntegration.cs"/>
+        <Compile Include="PlayerDiveKeyHints.cs"/>
+        <Compile Include="UnderwaterDepthUtils.cs"/>
         <Compile Include="MonsterAIDive.cs" />
         <Compile Include="Properties\AssemblyInfo.cs"/>
         <Compile Include="UnderwaterVisuals.cs"/>
@@ -136,12 +141,10 @@
         <Content Include="Thunderstore\CHANGELOG.md"/>
         <Content Include="Thunderstore\icon.png"/>
         <Content Include="Thunderstore\manifest.json"/>
-        <EmbeddedResource Include="translations\English.yml"/>
         <Content Include="UpdateManifest.ps1"/>
     </ItemGroup>
     <ItemGroup>
         <None Include="App.config"/>
-        <None Include="Plugin.cs"/>
     </ItemGroup>
     <ItemGroup>
         <PackageReference Include="ILRepack.Lib.MSBuild.Task" Version="2.0.44.1">
@@ -188,12 +191,12 @@
         <Copy SourceFiles="$(TargetDir)$(AssemblyName).dll" DestinationFolder="$(CopyOutputDLLPath3)" OverwriteReadOnlyFiles="true" Condition="Exists('$(CopyOutputDLLPath3)')"/>
     </Target>
     <Target Name="CopyReadMeToTSFolder" AfterTargets="CopyOutputDLL" Condition=" ('$(Configuration)|$(Platform)' == 'Release|AnyCPU') And ('$(OS)' == 'Windows_NT') ">
-        <Warning Text="README.md not found in project directory. A default README.md file will be created for the Thunderstore package" Condition="!Exists('README.md')"/>
-        <WriteLinesToFile File="README.md" Lines="Default Readme file from one of Azumatt's Templates. Replace this with actual content." Overwrite="false" Condition="!Exists('README.md')"/>
-        <Copy SourceFiles="README.md" DestinationFolder="$(PackageDir)" OverwriteReadOnlyFiles="true"/>
-        <Copy SourceFiles="README.md" DestinationFolder="$(ProjectDir)\Thunderstore" OverwriteReadOnlyFiles="true"/>
+        <Error Text="README.md not found in project directory. Root README.md is the single README source for the package." Condition="!Exists('$(ProjectDir)README.md')"/>
+        <RemoveDir Directories="$(PackageDir)" Condition="Exists('$(PackageDir)')"/>
+        <MakeDir Directories="$(PackageDir)"/>
+        <Copy SourceFiles="$(ProjectDir)README.md" DestinationFiles="$(PackageDir)\README.md" OverwriteReadOnlyFiles="true"/>
     </Target>
-    <Target Name="UpdateManifestVersion" AfterTargets="CopyReadmeToTSFolder" Condition=" ('$(Configuration)|$(Platform)' == 'Release|AnyCPU') And ('$(OS)' == 'Windows_NT') ">
+    <Target Name="UpdateManifestVersion" AfterTargets="CopyReadMeToTSFolder" Condition=" ('$(Configuration)|$(Platform)' == 'Release|AnyCPU') And ('$(OS)' == 'Windows_NT') ">
         <ItemGroup>
             <ManifestFile Include="$(ProjectDir)Thunderstore\manifest.json"/>
         </ItemGroup>

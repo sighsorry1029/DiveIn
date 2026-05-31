@@ -43,18 +43,11 @@ internal static class PlayerDivePatches
             return;
         }
 
-        if (!ServerSyncModTemplatePlugin.IsPlayerDiveEnvAllowed())
-        {
-            diver.DisableUnderwaterMovement();
-            return;
-        }
-
         diver.ResetSwimDepthIfNotInWater();
         diver.RefreshUnderwaterMovementState();
         if (diver.ShouldForceSwimming())
         {
-            diver.Player.m_lastGroundTouch = 0.3f;
-            diver.Player.m_swimTimer = 0f;
+            diver.PrepareForcedSwimming();
         }
     }
 
@@ -78,19 +71,13 @@ internal static class PlayerDivePatches
         diver.BeginSwimmingUpdateContext();
         __state = new SwimmingUpdateState(diver, null);
 
-        if (!ServerSyncModTemplatePlugin.IsPlayerDiveEnvAllowed())
-        {
-            diver.DisableUnderwaterMovement();
-            return;
-        }
-
         diver.UpdateSwimSpeed();
-        if ((ZInput.GetButton("Jump") || ZInput.GetButton("JoyJump")) && diver.IsUnderSurface())
+        if (ServerSyncModTemplatePlugin.IsDiveAscendInputHeld() && diver.IsUnderSurface())
         {
             diver.Dive(dt, ascend: true, out Vector3? originalMoveDir);
             __state = new SwimmingUpdateState(diver, originalMoveDir);
         }
-        else if ((ZInput.GetButton("Crouch") || ZInput.GetButton("JoyCrouch")) && diver.CanDive())
+        else if (ServerSyncModTemplatePlugin.IsDiveDescendInputHeld() && diver.CanDive())
         {
             diver.Dive(dt, ascend: false, out Vector3? originalMoveDir);
             __state = new SwimmingUpdateState(diver, originalMoveDir);
@@ -105,6 +92,7 @@ internal static class PlayerDivePatches
     [HarmonyPatch(typeof(Character), nameof(Character.UpdateSwimming))]
     private static void CharacterUpdateSwimmingPostfix(Character __instance, ref SwimmingUpdateState __state)
     {
+        __state.Diver?.ResetSwimSpeedOverride();
         __state.Diver?.EndSwimmingUpdateContext();
         if (__state.OriginalMoveDir.HasValue)
         {
@@ -148,8 +136,7 @@ internal static class PlayerDivePatches
         }
 
         PlayerDiveController? diver = PlayerDiveUtils.EnsureLocalDiver();
-        if (!ServerSyncModTemplatePlugin.IsPlayerDiveEnvAllowed()
-            || diver == null
+        if (diver == null
             || !diver.IsInSwimmingUpdateContext()
             || !diver.IsUnderSurface())
         {
@@ -168,7 +155,7 @@ internal static class PlayerDivePatches
     [HarmonyPatch(typeof(Player), nameof(Player.OnSwimming))]
     private static void PlayerOnSwimmingPrefix(Player __instance, Vector3 targetVel, float dt)
     {
-        if (__instance != Player.m_localPlayer || !ServerSyncModTemplatePlugin.IsPlayerDiveEnvAllowed())
+        if (__instance != Player.m_localPlayer)
         {
             return;
         }
@@ -188,7 +175,7 @@ internal static class PlayerDivePatches
     {
         if (__instance != Player.m_localPlayer
             || targetVel.magnitude < 0.1f
-            || !ServerSyncModTemplatePlugin.IsPlayerDiveEnvAllowed())
+            )
         {
             return;
         }
@@ -206,7 +193,7 @@ internal static class PlayerDivePatches
     [HarmonyPatch(typeof(Player), nameof(Player.SetControls))]
     private static void PlayerSetControlsPrefix(Player __instance, ref bool crouch)
     {
-        if (__instance != Player.m_localPlayer || !ServerSyncModTemplatePlugin.IsPlayerDiveEnvAllowed())
+        if (__instance != Player.m_localPlayer)
         {
             return;
         }

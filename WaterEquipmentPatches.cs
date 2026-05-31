@@ -56,11 +56,69 @@ internal static class WaterEquipmentPatches
             ShouldKeepWaterRestrictionForEquipItem);
     }
 
-    [HarmonyTranspiler]
+    [HarmonyPrefix]
     [HarmonyPatch(typeof(Player), nameof(Player.Update))]
-    private static IEnumerable<CodeInstruction> PlayerUpdateTranspiler(IEnumerable<CodeInstruction> instructions)
+    private static void PlayerUpdatePrefix(Player __instance, out bool __state)
     {
-        return InsertWaterEquipmentBypass<Humanoid>(instructions, "Player.Update", OpCodes.Ldarg_0, ShouldKeepWaterRestrictionForHumanoid);
+        __state = ShouldForceShowHiddenHandItems(__instance);
+    }
+
+    [HarmonyPostfix]
+    [HarmonyPatch(typeof(Player), nameof(Player.Update))]
+    private static void PlayerUpdatePostfix(Player __instance, bool __state)
+    {
+        if (__state && CanForceShowHiddenHandItems(__instance))
+        {
+            __instance.ShowHandItems();
+        }
+    }
+
+    private static bool ShouldForceShowHiddenHandItems(Player player)
+    {
+        return WasHideInputPressed(player) && CanForceShowHiddenHandItems(player);
+    }
+
+    private static bool CanForceShowHiddenHandItems(Player player)
+    {
+        return PlayerDiveUtils.IsValidLocalPlayer(player)
+               && player.IsSwimming()
+               && !player.IsOnGround()
+               && !player.InDodge()
+               && player.GetRightItem() == null
+               && player.GetLeftItem() == null
+               && HasHiddenHandItems(player)
+               && !HasWaterRestrictedHiddenHandItems(player);
+    }
+
+    private static bool WasHideInputPressed(Player player)
+    {
+        bool joyHide = !Hud.InRadial() &&
+                       ZInput.GetButtonUp("JoyHide") &&
+                       ZInput.GetButtonLastPressedTimer("JoyHide") < 0.33f;
+
+        if ((int)ZInput.InputLayout == 0 || !ZInput.IsGamepadActive())
+        {
+            return ZInput.GetButtonDown("Hide") ||
+                   joyHide && !ZInput.GetButton("JoyAltKeys") && !player.InPlaceMode();
+        }
+
+        return joyHide && !ZInput.GetButton("JoyAltKeys") && !player.InPlaceMode();
+    }
+
+    private static bool HasHiddenHandItems(Player player)
+    {
+        return player.m_hiddenRightItem != null || player.m_hiddenLeftItem != null;
+    }
+
+    private static bool HasWaterRestrictedHiddenHandItems(Player player)
+    {
+        return IsWaterRestrictedHiddenItem(player.m_hiddenRightItem) ||
+               IsWaterRestrictedHiddenItem(player.m_hiddenLeftItem);
+    }
+
+    private static bool IsWaterRestrictedHiddenItem(ItemDrop.ItemData? item)
+    {
+        return item != null && ServerSyncModTemplatePlugin.IsWaterRestrictedItem(item);
     }
 
     private static IEnumerable<CodeInstruction> InsertWaterEquipmentBypass<T>(

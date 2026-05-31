@@ -1,9 +1,9 @@
 {
-  "name": "DiveIn",
-  "version_number": "1.0.0",
-  "website_url": "https://discord.gg/pdHgy6Bsng",
-  "description": "GPL-3.0 Valheim mod with configurable monster underwater dive AI, player diving, underwater camera follow, and optional equipment use in water.",
+  "name": "Dive_In",
+  "version_number": "1.0.6",
+  "website_url": "https://discord.gg/jkcJCq2sK5",
+  "description": "Adds diving and swimming for players and configured creatures",
   "dependencies": [
-    "denikson-BepInExPack_Valheim-5.4.2202"
+    "denikson-BepInExPack_Valheim-5.4.2333"
   ]
 }
