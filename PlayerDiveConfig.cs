@@ -13,10 +13,12 @@ public partial class ServerSyncModTemplatePlugin
     internal const float DefaultUnderwaterCameraMinWaterDistance = -5000f;
 
     internal static ConfigEntry<string> _waterEquipmentBlacklist = null!;
-    internal static ConfigEntry<float> _waterStaminaRegenRateMultiplier = null!;
+    internal static ConfigEntry<float> _surfaceStaminaRegenRateMultiplier = null!;
+    internal static ConfigEntry<float> _midwaterStaminaRegenRateMultiplier = null!;
     internal static ConfigEntry<float> _waterDepthStaminaDrainMultiplier = null!;
     internal static ConfigEntry<float> _playerSwimSkillSpeedMultiplier = null!;
     internal static ConfigEntry<float> _playerSwimRunSpeedMultiplier = null!;
+    internal static ConfigEntry<float> _playerSwimRunStaminaDrainMultiplier = null!;
     internal static ConfigEntry<KeyboardShortcut> _playerDiveAscendShortcut = null!;
     internal static ConfigEntry<KeyboardShortcut> _playerDiveDescendShortcut = null!;
     internal static ConfigEntry<Toggle> _enableUnderwaterVisualStyling = null!;
@@ -37,14 +39,22 @@ public partial class ServerSyncModTemplatePlugin
                 "Comma-separated item prefab names that remain restricted in water. Everything not listed is allowed in water by default. Example: BowFineWood,ShieldBronzeBuckler.",
                 null,
                 new ConfigurationManagerAttributes { Order = 100 }));
-        _waterStaminaRegenRateMultiplier = config(
+        _surfaceStaminaRegenRateMultiplier = config(
             "2 - Player Diving",
-            "Water Stamina Regen Rate",
+            "Surface Stamina Regen Rate",
             0.5f,
             new ConfigDescription(
-                "Multiplier applied to vanilla stamina regeneration while swimming or diving in water. 0 matches vanilla swimming behavior (effective stamina regeneration stays at 0), 1 matches vanilla normal non-swimming stamina regeneration timing and rate.",
+                "Multiplier applied to vanilla stamina regeneration while swimming on the surface with your head above water. 0 matches vanilla swimming behavior, 1 matches normal non-swimming stamina regeneration timing and rate.",
                 new AcceptableValueRange<float>(0f, 1f),
                 new ConfigurationManagerAttributes { Order = 99 }));
+        _midwaterStaminaRegenRateMultiplier = config(
+            "2 - Player Diving",
+            "Midwater Stamina Regen Rate",
+            0f,
+            new ConfigDescription(
+                "Multiplier applied to vanilla stamina regeneration while your head is underwater. 0 makes stamina recover only after surfacing.",
+                new AcceptableValueRange<float>(0f, 1f),
+                new ConfigurationManagerAttributes { Order = 98 }));
         _waterDepthStaminaDrainMultiplier = config(
             "2 - Player Diving",
             "Water Depth Stamina Drain Multiplier",
@@ -52,15 +62,23 @@ public partial class ServerSyncModTemplatePlugin
             new ConfigDescription(
                 "Additional moving swim stamina drain percent per meter of current liquid depth. 1 means 30% extra at 30m; 2.5 means 75% extra at 30m. Applied multiplicatively with run-swimming stamina drain.",
                 new AcceptableValueRange<float>(0f, 5f),
-                new ConfigurationManagerAttributes { Order = 98 }));
+                new ConfigurationManagerAttributes { Order = 97 }));
         _playerSwimRunSpeedMultiplier = config(
             "2 - Player Diving",
             "Swim Run Speed Multiplier",
             2f,
             new ConfigDescription(
-                "Swim speed multiplier while Fast Swim is toggled on with the vanilla run key. 1 disables Fast Swim and hides its key hint. Swim skill separately increases base swim speed, and extra stamina drain scales with this multiplier.",
+                "Swim speed multiplier while Fast Swim is toggled on with the vanilla run key. 1 disables Fast Swim and hides its key hint. Swim skill separately increases base swim speed.",
                 new AcceptableValueRange<float>(1f, 3f),
                 new ConfigurationManagerAttributes { Order = 95 }));
+        _playerSwimRunStaminaDrainMultiplier = config(
+            "2 - Player Diving",
+            "Swim Run Stamina Drain Multiplier",
+            2f,
+            new ConfigDescription(
+                "Moving swim stamina drain multiplier while Fast Swim is toggled on. Applied multiplicatively with water depth stamina drain.",
+                new AcceptableValueRange<float>(1f, 5f),
+                new ConfigurationManagerAttributes { Order = 94 }));
         _playerSwimSkillSpeedMultiplier = config(
             "2 - Player Diving",
             "Swim Skill Speed Multiplier",

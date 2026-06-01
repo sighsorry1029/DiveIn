@@ -18,9 +18,9 @@ Recommend to use with RtDOcean. There is configured sample for it.
 
 ### Player Diving
 
-- Unlike vanilla Valheim, stamina regeneration while swimming or diving can be enabled through config.
+- Unlike vanilla Valheim, stamina regeneration while swimming can be enabled separately for surface swimming and midwater diving.
 - Extra stamina drain scales linearly per meter of current liquid depth and stacks multiplicatively with run-swimming.
-- Pressing the vanilla run key in water toggles Fast Swim, doubling overall swim speed by default and consuming extra stamina. Swim skill still improves base swim speed by a configurable amount.
+- Pressing the vanilla run key in water toggles Fast Swim, doubling overall swim speed by default and consuming configurable extra stamina. Swim skill still improves base swim speed by a configurable amount.
 - Swimming key hint labels are localized for supported Valheim languages.
 - Surface swimming keeps the player's vanilla swim depth and only changes depth while diving.
 - Attacking, secondary attacking, and guarding underwater stop swim movement so combat input takes priority.
@@ -103,11 +103,17 @@ Lock Configuration = On
 # Default value:
 Water Equipment Blacklist =
 
-## Multiplier applied to vanilla stamina regeneration while swimming or diving in water. 0 matches vanilla swimming behavior (effective stamina regeneration stays at 0), 1 matches vanilla normal non-swimming stamina regeneration timing and rate. [Synced with Server]
+## Multiplier applied to vanilla stamina regeneration while swimming on the surface with your head above water. 0 matches vanilla swimming behavior, 1 matches normal non-swimming stamina regeneration timing and rate. [Synced with Server]
 # Setting type: Single
 # Default value: 0.5
 # Acceptable value range: From 0 to 1
-Water Stamina Regen Rate = 0.5
+Surface Stamina Regen Rate = 0.5
+
+## Multiplier applied to vanilla stamina regeneration while your head is underwater. 0 makes stamina recover only after surfacing. [Synced with Server]
+# Setting type: Single
+# Default value: 0
+# Acceptable value range: From 0 to 1
+Midwater Stamina Regen Rate = 0
 
 ## Additional moving swim stamina drain percent per meter of current liquid depth. 1 means 30% extra at 30m; 2.5 means 75% extra at 30m. Applied multiplicatively with run-swimming stamina drain. [Synced with Server]
 # Setting type: Single
@@ -121,11 +127,17 @@ Water Depth Stamina Drain Multiplier = 2.5
 # Acceptable value range: From 1 to 3
 Swim Skill Speed Multiplier = 1.5
 
-## Swim speed multiplier while Fast Swim is toggled on with the vanilla run key. Swim skill separately increases base swim speed, and extra stamina drain scales with this multiplier. [Synced with Server]
+## Swim speed multiplier while Fast Swim is toggled on with the vanilla run key. Swim skill separately increases base swim speed. [Synced with Server]
 # Setting type: Single
 # Default value: 2
 # Acceptable value range: From 1 to 3
 Swim Run Speed Multiplier = 2
+
+## Moving swim stamina drain multiplier while Fast Swim is toggled on. Applied multiplicatively with water depth stamina drain. [Synced with Server]
+# Setting type: Single
+# Default value: 2
+# Acceptable value range: From 1 to 5
+Swim Run Stamina Drain Multiplier = 2
 
 [3 - Underwater Visuals]
 

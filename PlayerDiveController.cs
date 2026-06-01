@@ -63,7 +63,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
     private bool _fastSwimEnabled;
     private bool _hasSwimSpeedOverride;
     private float _originalSwimSpeed;
-    private float _activeSwimRunSpeedMultiplier = 1f;
+    private float _activeSwimRunStaminaDrainMultiplier = 1f;
     private float _combatMovementSuppressedUntilTime;
     private int _swimmingUpdateContextDepth;
     private int _swimmingUpdateContextFrame = -1;
@@ -266,7 +266,9 @@ internal sealed class PlayerDiveController : MonoBehaviour
 
     internal void RegenWaterStamina(float dt)
     {
-        float waterRegenRate = ServerSyncModTemplatePlugin._waterStaminaRegenRateMultiplier.Value;
+        float waterRegenRate = IsHeadUnderwater()
+            ? ServerSyncModTemplatePlugin._midwaterStaminaRegenRateMultiplier.Value
+            : ServerSyncModTemplatePlugin._surfaceStaminaRegenRateMultiplier.Value;
         if (waterRegenRate <= 0f)
         {
             return;
@@ -320,7 +322,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
         ResetSwimSpeedOverride();
         float skillSpeedMultiplier = GetSwimSkillSpeedMultiplier();
         float runSpeedMultiplier = GetSwimRunSpeedMultiplier();
-        _activeSwimRunSpeedMultiplier = runSpeedMultiplier;
+        _activeSwimRunStaminaDrainMultiplier = GetSwimRunStaminaDrainMultiplier();
 
         float speedMultiplier = skillSpeedMultiplier * runSpeedMultiplier;
         if (Mathf.Approximately(speedMultiplier, 1f))
@@ -337,13 +339,13 @@ internal sealed class PlayerDiveController : MonoBehaviour
     {
         if (!_hasSwimSpeedOverride)
         {
-            _activeSwimRunSpeedMultiplier = 1f;
+            _activeSwimRunStaminaDrainMultiplier = 1f;
             return;
         }
 
         Player.m_swimSpeed = _originalSwimSpeed;
         _hasSwimSpeedOverride = false;
-        _activeSwimRunSpeedMultiplier = 1f;
+        _activeSwimRunStaminaDrainMultiplier = 1f;
     }
 
     private float GetSwimSkillSpeedMultiplier()
@@ -361,6 +363,16 @@ internal sealed class PlayerDiveController : MonoBehaviour
         }
 
         return Mathf.Max(1f, ServerSyncModTemplatePlugin._playerSwimRunSpeedMultiplier.Value);
+    }
+
+    private float GetSwimRunStaminaDrainMultiplier()
+    {
+        if (!IsFastSwimEnabled() || !Player.HaveStamina())
+        {
+            return 1f;
+        }
+
+        return Mathf.Max(1f, ServerSyncModTemplatePlugin._playerSwimRunStaminaDrainMultiplier.Value);
     }
 
     private float GetModifiedSwimStaminaDrain()
@@ -447,7 +459,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
 
     private float GetExtraSwimStaminaDrainMultiplier()
     {
-        return GetDepthSwimStaminaDrainMultiplier() * Mathf.Max(1f, _activeSwimRunSpeedMultiplier);
+        return GetDepthSwimStaminaDrainMultiplier() * Mathf.Max(1f, _activeSwimRunStaminaDrainMultiplier);
     }
 
     private float GetDepthSwimStaminaDrainMultiplier()
