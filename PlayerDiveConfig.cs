@@ -15,6 +15,8 @@ public partial class ServerSyncModTemplatePlugin
     internal static ConfigEntry<string> _waterEquipmentBlacklist = null!;
     internal static ConfigEntry<float> _surfaceStaminaRegenRateMultiplier = null!;
     internal static ConfigEntry<float> _midwaterStaminaRegenRateMultiplier = null!;
+    internal static ConfigEntry<float> _surfaceEitrRegenRateMultiplier = null!;
+    internal static ConfigEntry<float> _midwaterEitrRegenRateMultiplier = null!;
     internal static ConfigEntry<float> _midwaterIdleStaminaDrainPerDepth = null!;
     internal static ConfigEntry<float> _swimStaminaDrainMultiplierPerDepth = null!;
     internal static ConfigEntry<float> _playerSwimSkillSpeedMultiplier = null!;
@@ -40,37 +42,53 @@ public partial class ServerSyncModTemplatePlugin
                 null,
                 new ConfigurationManagerAttributes { Order = 100 }));
         _surfaceStaminaRegenRateMultiplier = config(
-            "3 - Swim Stamina",
+            "3 - Swim Resources",
             "Surface Stamina Regen Rate",
             0.5f,
             new ConfigDescription(
                 "Multiplier applied to vanilla stamina regeneration while swimming on the surface with your head above water. 0 matches vanilla swimming behavior, 1 matches normal non-swimming stamina regeneration timing and rate.",
                 new AcceptableValueRange<float>(0f, 1f),
-                new ConfigurationManagerAttributes { Order = 100 }));
+                new ConfigurationManagerAttributes { Order = 110 }));
         _midwaterStaminaRegenRateMultiplier = config(
-            "3 - Swim Stamina",
+            "3 - Swim Resources",
             "Midwater Stamina Regen Rate",
             0f,
             new ConfigDescription(
                 "Multiplier applied to vanilla stamina regeneration while your head is underwater. 0 makes stamina recover only after surfacing.",
                 new AcceptableValueRange<float>(0f, 1f),
-                new ConfigurationManagerAttributes { Order = 99 }));
+                new ConfigurationManagerAttributes { Order = 109 }));
+        _surfaceEitrRegenRateMultiplier = config(
+            "3 - Swim Resources",
+            "Surface Eitr Regen Rate",
+            0.7f,
+            new ConfigDescription(
+                "Multiplier applied to vanilla eitr regeneration while swimming on the surface with your head above water. 0 disables eitr regeneration while surface swimming, 1 keeps vanilla eitr regeneration.",
+                new AcceptableValueRange<float>(0f, 1f),
+                new ConfigurationManagerAttributes { Order = 108 }));
+        _midwaterEitrRegenRateMultiplier = config(
+            "3 - Swim Resources",
+            "Midwater Eitr Regen Rate",
+            0.3f,
+            new ConfigDescription(
+                "Multiplier applied to vanilla eitr regeneration while your head is underwater. 0 makes eitr recover only after surfacing.",
+                new AcceptableValueRange<float>(0f, 1f),
+                new ConfigurationManagerAttributes { Order = 107 }));
         _midwaterIdleStaminaDrainPerDepth = config(
-            "3 - Swim Stamina",
+            "3 - Swim Resources",
             "Midwater Idle Stamina Drain Per Depth",
             0.02f,
             new ConfigDescription(
                 "Idle stamina drained per second per 1m of current liquid depth while your head is underwater. 0 disables idle underwater stamina drain. Example: 0.1 drains 3 stamina per second at 30m depth.",
                 new AcceptableValueRange<float>(0f, 1f),
-                new ConfigurationManagerAttributes { Order = 98 }));
+                new ConfigurationManagerAttributes { Order = 106 }));
         _swimStaminaDrainMultiplierPerDepth = config(
-            "3 - Swim Stamina",
+            "3 - Swim Resources",
             "Swim Stamina Drain Multiplier Per Depth",
             2.5f,
             new ConfigDescription(
                 "Additional moving swim stamina drain percent per 1m of current liquid depth. 1 means 30% extra at 30m; 2.5 means 75% extra at 30m. Applied multiplicatively with Fast Swim stamina drain.",
                 new AcceptableValueRange<float>(0f, 5f),
-                new ConfigurationManagerAttributes { Order = 97 }));
+                new ConfigurationManagerAttributes { Order = 105 }));
         _fastSwimSpeedMultiplier = config(
             "4 - Swim Speed",
             "Fast Swim Speed Multiplier",

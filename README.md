@@ -126,7 +126,7 @@ Darkness Factor = 0.5
 # Acceptable value range: From 0 to 3
 Murkiness Factor = 0.25
 
-[3 - Swim Stamina]
+[3 - Swim Resources]
 
 ## Multiplier applied to vanilla stamina regeneration while swimming on the surface with your head above water. 0 matches vanilla swimming behavior, 1 matches normal non-swimming stamina regeneration timing and rate. [Synced with Server]
 # Setting type: Single
@@ -139,6 +139,18 @@ Surface Stamina Regen Rate = 0.5
 # Default value: 0
 # Acceptable value range: From 0 to 1
 Midwater Stamina Regen Rate = 0
+
+## Multiplier applied to vanilla eitr regeneration while swimming on the surface with your head above water. 0 disables eitr regeneration while surface swimming, 1 keeps vanilla eitr regeneration. [Synced with Server]
+# Setting type: Single
+# Default value: 0.7
+# Acceptable value range: From 0 to 1
+Surface Eitr Regen Rate = 0.7
+
+## Multiplier applied to vanilla eitr regeneration while your head is underwater. 0 makes eitr recover only after surfacing. [Synced with Server]
+# Setting type: Single
+# Default value: 0.3
+# Acceptable value range: From 0 to 1
+Midwater Eitr Regen Rate = 0.3
 
 ## Idle stamina drained per second per 1m of current liquid depth while your head is underwater. 0 disables idle underwater stamina drain. Example: 0.1 drains 3 stamina per second at 30m depth. [Synced with Server]
 # Setting type: Single

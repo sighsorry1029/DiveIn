@@ -18,6 +18,18 @@ internal static class PlayerDivePatches
         internal Vector3? OriginalMoveDir { get; }
     }
 
+    private readonly struct ResourceUpdateState
+    {
+        internal ResourceUpdateState(PlayerDiveController? diver, float eitr)
+        {
+            Diver = diver;
+            Eitr = eitr;
+        }
+
+        internal PlayerDiveController? Diver { get; }
+        internal float Eitr { get; }
+    }
+
     [HarmonyPostfix]
     [HarmonyPatch(typeof(Player), nameof(Player.Awake))]
     private static void PlayerAwakePostfix(Player __instance)
@@ -190,6 +202,51 @@ internal static class PlayerDivePatches
         }
 
         diver.ApplyExtraSwimStaminaDrain(dt);
+    }
+
+    [HarmonyPrefix]
+    [HarmonyPatch(typeof(Player), nameof(Player.UpdateStats), new[] { typeof(float) })]
+    private static void PlayerUpdateStatsPrefix(Player __instance, out ResourceUpdateState __state)
+    {
+        __state = default;
+        if (__instance != Player.m_localPlayer ||
+            !PlayerDiveUtils.TryGetLocalDiver(__instance, out PlayerDiveController diver) ||
+            !diver.ShouldTreatAsSwimming())
+        {
+            return;
+        }
+
+        __state = new ResourceUpdateState(diver, __instance.m_eitr);
+    }
+
+    [HarmonyPostfix]
+    [HarmonyPatch(typeof(Player), nameof(Player.UpdateStats), new[] { typeof(float) })]
+    private static void PlayerUpdateStatsPostfix(Player __instance, ref ResourceUpdateState __state)
+    {
+        if (__state.Diver == null)
+        {
+            return;
+        }
+
+        float gainedEitr = __instance.m_eitr - __state.Eitr;
+        if (gainedEitr <= 0f)
+        {
+            return;
+        }
+
+        float regenRate = __state.Diver.IsHeadUnderwater()
+            ? ServerSyncModTemplatePlugin._midwaterEitrRegenRateMultiplier.Value
+            : ServerSyncModTemplatePlugin._surfaceEitrRegenRateMultiplier.Value;
+        if (regenRate >= 1f)
+        {
+            return;
+        }
+
+        __instance.m_eitr = Mathf.Min(__instance.GetMaxEitr(), __state.Eitr + gainedEitr * Mathf.Clamp01(regenRate));
+        if (__instance.m_nview != null && __instance.m_nview.IsValid())
+        {
+            __instance.m_nview.GetZDO().Set(ZDOVars.s_eitr, __instance.m_eitr);
+        }
     }
 
 }
