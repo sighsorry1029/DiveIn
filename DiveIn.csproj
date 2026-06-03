@@ -131,6 +131,7 @@
         <Compile Include="Properties\AssemblyInfo.cs"/>
         <Compile Include="UnderwaterVisuals.cs"/>
         <Compile Include="UnderwaterSurfaceRenderer.cs"/>
+        <Compile Include="UnderwaterCombatPatches.cs"/>
         <Compile Include="WaterEquipmentPatches.cs"/>
     </ItemGroup>
     <ItemGroup>

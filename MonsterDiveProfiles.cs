@@ -6,8 +6,8 @@ namespace ServerSyncModTemplate;
 
 public partial class ServerSyncModTemplatePlugin
 {
-    private static readonly object PrefabSetLock = new();
-    private static Dictionary<string, ConfiguredDiveProfile> _configuredDiveProfilesByPrefabName = new(StringComparer.OrdinalIgnoreCase);
+    private static IReadOnlyDictionary<string, ConfiguredDiveProfile> _configuredDiveProfilesByPrefabName =
+        new Dictionary<string, ConfiguredDiveProfile>(StringComparer.OrdinalIgnoreCase);
     private static readonly Dictionary<int, OriginalDiveFlags> OriginalDiveFlagsByInstance = new();
     private const int MaxCacheEntries = 2048;
 

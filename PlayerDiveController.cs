@@ -49,6 +49,14 @@ internal static class PlayerDiveUtils
     {
         return player != null && player == Player.m_localPlayer;
     }
+
+    internal static bool TryGetUnderwaterLocalDiver(Player player, out PlayerDiveController diver)
+    {
+        diver = null!;
+        return IsValidLocalPlayer(player)
+               && TryGetLocalDiver(player, out diver)
+               && diver.ShouldTreatAsSwimming();
+    }
 }
 
 internal sealed class PlayerDiveController : MonoBehaviour

@@ -224,10 +224,7 @@ public partial class ServerSyncModTemplatePlugin
             ServerSyncModTemplateLogger.LogWarning($"Monster dive YAML loaded during {reason}, but no prefabs are assigned to any group.");
         }
 
-        lock (PrefabSetLock)
-        {
-            _configuredDiveProfilesByPrefabName = configuredProfilesByPrefabName;
-        }
+        _configuredDiveProfilesByPrefabName = configuredProfilesByPrefabName;
 
         int restoredMonsterCount = RestoreRemovedMonsterDiveFlags();
         ClearRuntimeCaches();

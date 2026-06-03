@@ -116,15 +116,15 @@ Water Equipment Blacklist =
 
 ## Underwater darkness added per meter of swim depth. 1 means 1% per meter, so 30m gives 30%. [Synced with Server]
 # Setting type: Single
-# Default value: 1
+# Default value: 0.5
 # Acceptable value range: From 0 to 3
-Darkness Factor = 1
+Darkness Factor = 0.5
 
 ## Underwater fog density added per meter of swim depth. 1 means 1% per meter, so 30m adds 30%. [Synced with Server]
 # Setting type: Single
-# Default value: 0.5
+# Default value: 0.25
 # Acceptable value range: From 0 to 3
-Murkiness Factor = 0.5
+Murkiness Factor = 0.25
 
 [3 - Swim Stamina]
 

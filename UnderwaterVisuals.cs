@@ -8,6 +8,8 @@ internal static class UnderwaterVisualState
     private static float? _originalMinWaterDistance;
     private static GameCamera? _cameraWithOverride;
     private static bool _fogOverrideActive;
+    private static Color _originalFogColor;
+    private static float _originalFogDensity;
 
     internal static void ApplyCameraOverride(GameCamera gameCamera)
     {
@@ -34,6 +36,13 @@ internal static class UnderwaterVisualState
             return;
         }
 
+        if (!_fogOverrideActive)
+        {
+            _originalFogColor = RenderSettings.fogColor;
+            _originalFogDensity = RenderSettings.fogDensity;
+            _fogOverrideActive = true;
+        }
+
         Color waterColor = !EnvMan.IsNight() ? currentEnvironment.m_fogColorDay : currentEnvironment.m_fogColorNight;
         waterColor.a = 1f;
         float darknessAmount = GetUnderwaterDarknessAmount(diver.Player.m_swimDepth);
@@ -43,8 +52,6 @@ internal static class UnderwaterVisualState
 
         float fogDensity = GetEnvironmentFogDensity(currentEnvironment) + (diver.Player.m_swimDepth * ServerSyncModTemplatePlugin.GetUnderwaterVisibilityFalloff());
         RenderSettings.fogDensity = Mathf.Max(0f, fogDensity);
-
-        _fogOverrideActive = true;
     }
 
     internal static void ResetAll()
@@ -79,24 +86,8 @@ internal static class UnderwaterVisualState
         }
 
         _fogOverrideActive = false;
-        RefreshEnvironment();
-    }
-
-    private static void RefreshEnvironment()
-    {
-        if (EnvMan.instance == null)
-        {
-            return;
-        }
-
-        EnvSetup currentEnvironment = EnvMan.instance.GetCurrentEnvironment();
-        if (currentEnvironment == null)
-        {
-            return;
-        }
-
-        EnvMan.instance.SetForceEnvironment(currentEnvironment.m_name);
-        EnvMan.instance.SetForceEnvironment(string.Empty);
+        RenderSettings.fogColor = _originalFogColor;
+        RenderSettings.fogDensity = _originalFogDensity;
     }
 
     private static float GetUnderwaterDarknessAmount(float swimDepth)

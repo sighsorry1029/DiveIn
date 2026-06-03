@@ -18,8 +18,15 @@ internal static class PlayerDiveKeyHints
     private static KeyHints? _owner;
     private static DiveHintSet? _swimmingHints;
     private static DiveHintSet? _combatHints;
+    private static InputHintMode _hintMode;
     private static readonly string[] KeyTextNameTokens = { "key", "bind", "binding", "shortcut", "input", "button" };
     private static readonly string[] LabelTextNameTokens = { "label", "action", "name", "title" };
+
+    private enum InputHintMode
+    {
+        Keyboard,
+        Gamepad
+    }
 
     private sealed class DiveHintCell
     {
@@ -67,6 +74,14 @@ internal static class PlayerDiveKeyHints
             if (Root)
             {
                 Root.SetActive(active);
+            }
+        }
+
+        public void Destroy()
+        {
+            if (Root)
+            {
+                UnityEngine.Object.Destroy(Root);
             }
         }
     }
@@ -119,6 +134,19 @@ internal static class PlayerDiveKeyHints
         public void RebuildLayout()
         {
             PlayerDiveKeyHints.RebuildLayout(Root != null ? Root : DescendHint.Root);
+        }
+
+        public void Destroy()
+        {
+            if (Root)
+            {
+                UnityEngine.Object.Destroy(Root);
+                return;
+            }
+
+            RunHint.Destroy();
+            DescendHint.Destroy();
+            AscendHint.Destroy();
         }
     }
 
@@ -225,27 +253,31 @@ internal static class PlayerDiveKeyHints
             return false;
         }
 
+        InputHintMode currentMode = GetInputHintMode();
         if (_owner == keyHints &&
+            _hintMode == currentMode &&
             _swimmingHints?.IsValid == true &&
             _combatHints?.IsValid == true)
         {
             return true;
         }
 
+        DestroyHints();
         _owner = keyHints;
-        _swimmingHints = CreateSwimmingHints(keyHints);
-        _combatHints = CreateCombatHints(keyHints);
+        _hintMode = currentMode;
+        _swimmingHints = CreateSwimmingHints(keyHints, currentMode);
+        _combatHints = CreateCombatHints(keyHints, currentMode);
         return _swimmingHints?.IsValid == true && _combatHints?.IsValid == true;
     }
 
-    private static DiveHintSet? CreateSwimmingHints(KeyHints keyHints)
+    private static DiveHintSet? CreateSwimmingHints(KeyHints keyHints, InputHintMode mode)
     {
         Transform parent = keyHints.m_combatHints.transform.parent;
         GameObject root = UnityEngine.Object.Instantiate(keyHints.m_combatHints, parent, false);
         root.name = SwimmingHintsRootName;
         root.transform.SetSiblingIndex(keyHints.m_combatHints.transform.GetSiblingIndex());
 
-        Transform hintParent = GetHintParent(root);
+        Transform hintParent = GetHintParent(root, mode);
         for (int i = 0; i < root.transform.childCount; ++i)
         {
             Transform child = root.transform.GetChild(i);
@@ -264,9 +296,9 @@ internal static class PlayerDiveKeyHints
         return hintSet;
     }
 
-    private static DiveHintSet? CreateCombatHints(KeyHints keyHints)
+    private static DiveHintSet? CreateCombatHints(KeyHints keyHints, InputHintMode mode)
     {
-        Transform hintParent = GetHintParent(keyHints.m_combatHints);
+        Transform hintParent = GetHintParent(keyHints.m_combatHints, mode);
         GameObject[] templates = GetTemplateHintCells(hintParent);
         DiveHintSet? hintSet = CreateHintSet(hintParent, null, templates, false, "combat");
         if (hintSet == null)
@@ -306,13 +338,18 @@ internal static class PlayerDiveKeyHints
         return new DiveHintSet(root, runHint, descendHint, ascendHint);
     }
 
-    private static Transform GetHintParent(GameObject root)
+    private static Transform GetHintParent(GameObject root, InputHintMode mode)
     {
-        string preferredParentName = ZInput.IsGamepadActive() ? "Gamepad" : "Keyboard";
+        string preferredParentName = mode == InputHintMode.Gamepad ? "Gamepad" : "Keyboard";
         return FindHintParentWithTemplates(root, preferredParentName)
                ?? FindHintParentWithTemplates(root, "Keyboard")
                ?? FindHintParentWithTemplates(root, "Gamepad")
                ?? root.transform;
+    }
+
+    private static InputHintMode GetInputHintMode()
+    {
+        return ZInput.IsGamepadActive() ? InputHintMode.Gamepad : InputHintMode.Keyboard;
     }
 
     private static Transform? FindHintParentWithTemplates(GameObject root, string name)
@@ -425,6 +462,14 @@ internal static class PlayerDiveKeyHints
     {
         _swimmingHints?.SetActive(active);
         _combatHints?.SetActive(active);
+    }
+
+    private static void DestroyHints()
+    {
+        _swimmingHints?.Destroy();
+        _combatHints?.Destroy();
+        _swimmingHints = null;
+        _combatHints = null;
     }
 
     private static void RebuildLayout(GameObject? hint)

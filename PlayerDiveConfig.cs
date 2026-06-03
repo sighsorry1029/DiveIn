@@ -8,8 +8,8 @@ namespace ServerSyncModTemplate;
 
 public partial class ServerSyncModTemplatePlugin
 {
-    internal const float DefaultUnderwaterDarknessFactor = 1f;
-    internal const float DefaultUnderwaterVisibilityFalloff = 0.5f;
+    internal const float DefaultUnderwaterDarknessFactor = 0.5f;
+    internal const float DefaultUnderwaterVisibilityFalloff = 0.25f;
     internal const float DefaultUnderwaterCameraMinWaterDistance = -5000f;
 
     internal static ConfigEntry<string> _waterEquipmentBlacklist = null!;
