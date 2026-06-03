@@ -169,6 +169,7 @@ internal static class PlayerDivePatches
         }
 
         diver.RegenWaterStamina(dt);
+        diver.ApplyIdleMidwaterStaminaDrain(dt);
     }
 
     [HarmonyPostfix]

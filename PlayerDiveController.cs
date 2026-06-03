@@ -299,6 +299,24 @@ internal sealed class PlayerDiveController : MonoBehaviour
         }
     }
 
+    internal void ApplyIdleMidwaterStaminaDrain(float dt)
+    {
+        float drainPerMeter = Mathf.Max(0f, ServerSyncModTemplatePlugin._midwaterIdleStaminaDrainPerDepth.Value);
+        if (drainPerMeter <= 0f || !IsHeadUnderwater() || !IsIdleInWater())
+        {
+            return;
+        }
+
+        float liquidDepth = Mathf.Max(0f, Player.InLiquidDepth());
+        float drainPerSecond = liquidDepth * drainPerMeter;
+        if (drainPerSecond <= 0f)
+        {
+            return;
+        }
+
+        Player.UseStamina(drainPerSecond * dt);
+    }
+
     internal void ApplyExtraSwimStaminaDrain(float dt)
     {
         float drainMultiplier = GetExtraSwimStaminaDrainMultiplier();
@@ -362,7 +380,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
             return 1f;
         }
 
-        return Mathf.Max(1f, ServerSyncModTemplatePlugin._playerSwimRunSpeedMultiplier.Value);
+        return Mathf.Max(1f, ServerSyncModTemplatePlugin._fastSwimSpeedMultiplier.Value);
     }
 
     private float GetSwimRunStaminaDrainMultiplier()
@@ -372,7 +390,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
             return 1f;
         }
 
-        return Mathf.Max(1f, ServerSyncModTemplatePlugin._playerSwimRunStaminaDrainMultiplier.Value);
+        return Mathf.Max(1f, ServerSyncModTemplatePlugin._fastSwimStaminaDrainMultiplier.Value);
     }
 
     private float GetModifiedSwimStaminaDrain()
@@ -464,7 +482,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
 
     private float GetDepthSwimStaminaDrainMultiplier()
     {
-        float percentPerMeter = Mathf.Max(0f, ServerSyncModTemplatePlugin._waterDepthStaminaDrainMultiplier.Value);
+        float percentPerMeter = Mathf.Max(0f, ServerSyncModTemplatePlugin._swimStaminaDrainMultiplierPerDepth.Value);
         float swimDepth = Mathf.Max(0f, Player.InLiquidDepth());
         return 1f + swimDepth * percentPerMeter / 100f;
     }

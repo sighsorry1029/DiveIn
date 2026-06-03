@@ -8,20 +8,20 @@ namespace ServerSyncModTemplate;
 
 public partial class ServerSyncModTemplatePlugin
 {
-    internal const float DefaultUnderwaterDarknessFactor = 2f;
-    internal const float DefaultUnderwaterVisibilityFalloff = 1f;
+    internal const float DefaultUnderwaterDarknessFactor = 1f;
+    internal const float DefaultUnderwaterVisibilityFalloff = 0.5f;
     internal const float DefaultUnderwaterCameraMinWaterDistance = -5000f;
 
     internal static ConfigEntry<string> _waterEquipmentBlacklist = null!;
     internal static ConfigEntry<float> _surfaceStaminaRegenRateMultiplier = null!;
     internal static ConfigEntry<float> _midwaterStaminaRegenRateMultiplier = null!;
-    internal static ConfigEntry<float> _waterDepthStaminaDrainMultiplier = null!;
+    internal static ConfigEntry<float> _midwaterIdleStaminaDrainPerDepth = null!;
+    internal static ConfigEntry<float> _swimStaminaDrainMultiplierPerDepth = null!;
     internal static ConfigEntry<float> _playerSwimSkillSpeedMultiplier = null!;
-    internal static ConfigEntry<float> _playerSwimRunSpeedMultiplier = null!;
-    internal static ConfigEntry<float> _playerSwimRunStaminaDrainMultiplier = null!;
+    internal static ConfigEntry<float> _fastSwimSpeedMultiplier = null!;
+    internal static ConfigEntry<float> _fastSwimStaminaDrainMultiplier = null!;
     internal static ConfigEntry<KeyboardShortcut> _playerDiveAscendShortcut = null!;
     internal static ConfigEntry<KeyboardShortcut> _playerDiveDescendShortcut = null!;
-    internal static ConfigEntry<Toggle> _enableUnderwaterVisualStyling = null!;
     internal static ConfigEntry<float> _underwaterDarknessFactor = null!;
     internal static ConfigEntry<float> _underwaterVisibilityFalloff = null!;
 
@@ -40,53 +40,61 @@ public partial class ServerSyncModTemplatePlugin
                 null,
                 new ConfigurationManagerAttributes { Order = 100 }));
         _surfaceStaminaRegenRateMultiplier = config(
-            "2 - Player Diving",
+            "3 - Swim Stamina",
             "Surface Stamina Regen Rate",
             0.5f,
             new ConfigDescription(
                 "Multiplier applied to vanilla stamina regeneration while swimming on the surface with your head above water. 0 matches vanilla swimming behavior, 1 matches normal non-swimming stamina regeneration timing and rate.",
                 new AcceptableValueRange<float>(0f, 1f),
-                new ConfigurationManagerAttributes { Order = 99 }));
+                new ConfigurationManagerAttributes { Order = 100 }));
         _midwaterStaminaRegenRateMultiplier = config(
-            "2 - Player Diving",
+            "3 - Swim Stamina",
             "Midwater Stamina Regen Rate",
             0f,
             new ConfigDescription(
                 "Multiplier applied to vanilla stamina regeneration while your head is underwater. 0 makes stamina recover only after surfacing.",
                 new AcceptableValueRange<float>(0f, 1f),
+                new ConfigurationManagerAttributes { Order = 99 }));
+        _midwaterIdleStaminaDrainPerDepth = config(
+            "3 - Swim Stamina",
+            "Midwater Idle Stamina Drain Per Depth",
+            0.02f,
+            new ConfigDescription(
+                "Idle stamina drained per second per 1m of current liquid depth while your head is underwater. 0 disables idle underwater stamina drain. Example: 0.1 drains 3 stamina per second at 30m depth.",
+                new AcceptableValueRange<float>(0f, 1f),
                 new ConfigurationManagerAttributes { Order = 98 }));
-        _waterDepthStaminaDrainMultiplier = config(
-            "2 - Player Diving",
-            "Water Depth Stamina Drain Multiplier",
+        _swimStaminaDrainMultiplierPerDepth = config(
+            "3 - Swim Stamina",
+            "Swim Stamina Drain Multiplier Per Depth",
             2.5f,
             new ConfigDescription(
-                "Additional moving swim stamina drain percent per meter of current liquid depth. 1 means 30% extra at 30m; 2.5 means 75% extra at 30m. Applied multiplicatively with run-swimming stamina drain.",
+                "Additional moving swim stamina drain percent per 1m of current liquid depth. 1 means 30% extra at 30m; 2.5 means 75% extra at 30m. Applied multiplicatively with Fast Swim stamina drain.",
                 new AcceptableValueRange<float>(0f, 5f),
                 new ConfigurationManagerAttributes { Order = 97 }));
-        _playerSwimRunSpeedMultiplier = config(
-            "2 - Player Diving",
-            "Swim Run Speed Multiplier",
+        _fastSwimSpeedMultiplier = config(
+            "4 - Swim Speed",
+            "Fast Swim Speed Multiplier",
             2f,
             new ConfigDescription(
                 "Swim speed multiplier while Fast Swim is toggled on with the vanilla run key. 1 disables Fast Swim and hides its key hint. Swim skill separately increases base swim speed.",
                 new AcceptableValueRange<float>(1f, 3f),
-                new ConfigurationManagerAttributes { Order = 95 }));
-        _playerSwimRunStaminaDrainMultiplier = config(
-            "2 - Player Diving",
-            "Swim Run Stamina Drain Multiplier",
+                new ConfigurationManagerAttributes { Order = 99 }));
+        _fastSwimStaminaDrainMultiplier = config(
+            "4 - Swim Speed",
+            "Fast Swim Stamina Drain Multiplier",
             2f,
             new ConfigDescription(
-                "Moving swim stamina drain multiplier while Fast Swim is toggled on. Applied multiplicatively with water depth stamina drain.",
+                "Moving swim stamina drain multiplier while Fast Swim is toggled on. Applied multiplicatively with Swim Stamina Drain Multiplier Per Depth.",
                 new AcceptableValueRange<float>(1f, 5f),
-                new ConfigurationManagerAttributes { Order = 94 }));
+                new ConfigurationManagerAttributes { Order = 98 }));
         _playerSwimSkillSpeedMultiplier = config(
-            "2 - Player Diving",
+            "4 - Swim Speed",
             "Swim Skill Speed Multiplier",
             1.5f,
             new ConfigDescription(
                 "Base swim speed multiplier at Swim skill 100. 1.5 means +50%.",
                 new AcceptableValueRange<float>(1f, 3f),
-                new ConfigurationManagerAttributes { Order = 96 }));
+                new ConfigurationManagerAttributes { Order = 100 }));
         _playerDiveAscendShortcut = config(
             "2 - Player Diving",
             "Dive Ascend Key",
@@ -105,38 +113,29 @@ public partial class ServerSyncModTemplatePlugin
                 new AcceptableShortcuts(),
                 new ConfigurationManagerAttributes { Order = 109 }),
             synchronizedSetting: false);
-        _enableUnderwaterVisualStyling = config(
-            "3 - Underwater Visuals",
-            "Enable Underwater Visual Styling",
-            Toggle.On,
-            new ConfigDescription(
-                "Whether underwater fog and reversed water surface styling are applied while submerged.",
-                null,
-                new ConfigurationManagerAttributes { Order = 94 }),
-            synchronizedSetting: false);
         _underwaterDarknessFactor = config(
-            "3 - Underwater Visuals",
+            "2 - Player Diving",
             "Darkness Factor",
             DefaultUnderwaterDarknessFactor,
             new ConfigDescription(
                 "Underwater darkness added per meter of swim depth. 1 means 1% per meter, so 30m gives 30%.",
-                new AcceptableValueRange<float>(0f, 10f),
-                new ConfigurationManagerAttributes { Order = 93 }),
-            synchronizedSetting: false);
+                new AcceptableValueRange<float>(0f, 3f),
+                new ConfigurationManagerAttributes { Order = 92 }),
+            synchronizedSetting: true);
         _underwaterVisibilityFalloff = config(
-            "3 - Underwater Visuals",
+            "2 - Player Diving",
             "Murkiness Factor",
             DefaultUnderwaterVisibilityFalloff,
             new ConfigDescription(
                 "Underwater fog density added per meter of swim depth. 1 means 1% per meter, so 30m adds 30%.",
-                new AcceptableValueRange<float>(0f, 10f),
-                new ConfigurationManagerAttributes { Order = 92 }),
-            synchronizedSetting: false);
+                new AcceptableValueRange<float>(0f, 3f),
+                new ConfigurationManagerAttributes { Order = 91 }),
+            synchronizedSetting: true);
     }
 
     internal static bool IsUnderwaterVisualStylingEnabled()
     {
-        return _enableUnderwaterVisualStyling.Value == Toggle.On;
+        return true;
     }
 
     internal static float GetUnderwaterCameraMinWaterDistance()
@@ -156,7 +155,7 @@ public partial class ServerSyncModTemplatePlugin
 
     internal static bool IsSwimRunEnabled()
     {
-        return _playerSwimRunSpeedMultiplier != null && _playerSwimRunSpeedMultiplier.Value > 1.001f;
+        return _fastSwimSpeedMultiplier != null && _fastSwimSpeedMultiplier.Value > 1.001f;
     }
 
     internal static bool IsDiveAscendInputHeld()

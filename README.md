@@ -19,7 +19,8 @@ Recommend to use with RtDOcean. There is configured sample for it.
 ### Player Diving
 
 - Unlike vanilla Valheim, stamina regeneration while swimming can be enabled separately for surface swimming and midwater diving.
-- Extra stamina drain scales linearly per meter of current liquid depth and stacks multiplicatively with run-swimming.
+- Idle stamina drain while your head is underwater can scale by current liquid depth to represent holding your breath.
+- Extra stamina drain scales linearly per 1m of current liquid depth and stacks multiplicatively with Fast Swim.
 - Pressing the vanilla run key in water toggles Fast Swim, doubling overall swim speed by default and consuming configurable extra stamina. Swim skill still improves base swim speed by a configurable amount.
 - Swimming key hint labels are localized for supported Valheim languages.
 - Surface swimming keeps the player's vanilla swim depth and only changes depth while diving.
@@ -96,12 +97,36 @@ Notes:
 # Acceptable values: Off, On
 Lock Configuration = On
 
-[2a - Player Diving]
+[2 - Player Diving]
+
+## Client-side key used to ascend while swimming underwater. [Not Synced with Server]
+# Setting type: KeyboardShortcut
+# Default value: Space
+Dive Ascend Key = Space
+
+## Client-side key used to descend while swimming. [Not Synced with Server]
+# Setting type: KeyboardShortcut
+# Default value: LeftControl
+Dive Descend Key = LeftControl
 
 ## Comma-separated item prefab names that remain restricted in water. Everything not listed is allowed in water by default. Example: BowFineWood,ShieldBronzeBuckler. [Synced with Server]
 # Setting type: String
 # Default value:
 Water Equipment Blacklist =
+
+## Underwater darkness added per meter of swim depth. 1 means 1% per meter, so 30m gives 30%. [Synced with Server]
+# Setting type: Single
+# Default value: 1
+# Acceptable value range: From 0 to 3
+Darkness Factor = 1
+
+## Underwater fog density added per meter of swim depth. 1 means 1% per meter, so 30m adds 30%. [Synced with Server]
+# Setting type: Single
+# Default value: 0.5
+# Acceptable value range: From 0 to 3
+Murkiness Factor = 0.5
+
+[3 - Swim Stamina]
 
 ## Multiplier applied to vanilla stamina regeneration while swimming on the surface with your head above water. 0 matches vanilla swimming behavior, 1 matches normal non-swimming stamina regeneration timing and rate. [Synced with Server]
 # Setting type: Single
@@ -115,11 +140,19 @@ Surface Stamina Regen Rate = 0.5
 # Acceptable value range: From 0 to 1
 Midwater Stamina Regen Rate = 0
 
-## Additional moving swim stamina drain percent per meter of current liquid depth. 1 means 30% extra at 30m; 2.5 means 75% extra at 30m. Applied multiplicatively with run-swimming stamina drain. [Synced with Server]
+## Idle stamina drained per second per 1m of current liquid depth while your head is underwater. 0 disables idle underwater stamina drain. Example: 0.1 drains 3 stamina per second at 30m depth. [Synced with Server]
+# Setting type: Single
+# Default value: 0.02
+# Acceptable value range: From 0 to 1
+Midwater Idle Stamina Drain Per Depth = 0.02
+
+## Additional moving swim stamina drain percent per 1m of current liquid depth. 1 means 30% extra at 30m; 2.5 means 75% extra at 30m. Applied multiplicatively with Fast Swim stamina drain. [Synced with Server]
 # Setting type: Single
 # Default value: 2.5
 # Acceptable value range: From 0 to 5
-Water Depth Stamina Drain Multiplier = 2.5
+Swim Stamina Drain Multiplier Per Depth = 2.5
+
+[4 - Swim Speed]
 
 ## Base swim speed multiplier at Swim skill 100. 1.5 means +50%. [Synced with Server]
 # Setting type: Single
@@ -131,33 +164,13 @@ Swim Skill Speed Multiplier = 1.5
 # Setting type: Single
 # Default value: 2
 # Acceptable value range: From 1 to 3
-Swim Run Speed Multiplier = 2
+Fast Swim Speed Multiplier = 2
 
-## Moving swim stamina drain multiplier while Fast Swim is toggled on. Applied multiplicatively with water depth stamina drain. [Synced with Server]
+## Moving swim stamina drain multiplier while Fast Swim is toggled on. Applied multiplicatively with Swim Stamina Drain Multiplier Per Depth. [Synced with Server]
 # Setting type: Single
 # Default value: 2
 # Acceptable value range: From 1 to 5
-Swim Run Stamina Drain Multiplier = 2
-
-[3 - Underwater Visuals]
-
-## Whether underwater fog and reversed water surface styling are applied while submerged. [Not Synced with Server]
-# Setting type: Toggle
-# Default value: On
-# Acceptable values: Off, On
-Enable Underwater Visual Styling = On
-
-## Underwater darkness added per meter of swim depth. 1 means 1% per meter, so 30m gives 30%. [Not Synced with Server]
-# Setting type: Single
-# Default value: 2
-# Acceptable value range: From 0 to 10
-Darkness Factor = 2
-
-## Underwater fog density added per meter of swim depth. 1 means 1% per meter, so 30m adds 30%. [Not Synced with Server]
-# Setting type: Single
-# Default value: 1
-# Acceptable value range: From 0 to 10
-Murkiness Factor = 1
+Fast Swim Stamina Drain Multiplier = 2
 
 ```
 
