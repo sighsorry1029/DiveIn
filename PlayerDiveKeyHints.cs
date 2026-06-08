@@ -19,6 +19,8 @@ internal static class PlayerDiveKeyHints
     private static DiveHintSet? _swimmingHints;
     private static DiveHintSet? _combatHints;
     private static InputHintMode _hintMode;
+    private static DiveHintSnapshot _lastHintSnapshot;
+    private static bool _hasLastHintSnapshot;
     private static readonly string[] KeyTextNameTokens = { "key", "bind", "binding", "shortcut", "input", "button" };
     private static readonly string[] LabelTextNameTokens = { "label", "action", "name", "title" };
 
@@ -26,6 +28,46 @@ internal static class PlayerDiveKeyHints
     {
         Keyboard,
         Gamepad
+    }
+
+    private readonly struct DiveHintSnapshot
+    {
+        public DiveHintSnapshot(
+            bool showFastSwimHint,
+            string fastSwimLabel,
+            string runKey,
+            string descendKey,
+            string ascendKey,
+            bool showCombatHints,
+            bool showSwimmingHints)
+        {
+            ShowFastSwimHint = showFastSwimHint;
+            FastSwimLabel = fastSwimLabel;
+            RunKey = runKey;
+            DescendKey = descendKey;
+            AscendKey = ascendKey;
+            ShowCombatHints = showCombatHints;
+            ShowSwimmingHints = showSwimmingHints;
+        }
+
+        public bool ShowFastSwimHint { get; }
+        public string FastSwimLabel { get; }
+        public string RunKey { get; }
+        public string DescendKey { get; }
+        public string AscendKey { get; }
+        public bool ShowCombatHints { get; }
+        public bool ShowSwimmingHints { get; }
+
+        public bool Matches(DiveHintSnapshot other)
+        {
+            return ShowFastSwimHint == other.ShowFastSwimHint
+                   && FastSwimLabel == other.FastSwimLabel
+                   && RunKey == other.RunKey
+                   && DescendKey == other.DescendKey
+                   && AscendKey == other.AscendKey
+                   && ShowCombatHints == other.ShowCombatHints
+                   && ShowSwimmingHints == other.ShowSwimmingHints;
+        }
     }
 
     private sealed class DiveHintCell
@@ -179,13 +221,13 @@ internal static class PlayerDiveKeyHints
             !PlayerDiveUtils.TryGetLocalDiver(player, out PlayerDiveController diver) ||
             !diver.ShouldShowDiveKeyHints())
         {
-            SetAllHintsActive(false);
+            HideDiveHints();
             return;
         }
 
         if (!EnsureHints(keyHints))
         {
-            SetAllHintsActive(false);
+            HideDiveHints();
             return;
         }
 
@@ -196,11 +238,28 @@ internal static class PlayerDiveKeyHints
             : DiveLocalization.FastSwimOffKey);
         string descendKey = ServerSyncModTemplatePlugin.GetDiveDescendKeyHint();
         string ascendKey = ServerSyncModTemplatePlugin.GetDiveAscendKeyHint();
+        bool showCombatHints = keyHints.m_combatHints != null && keyHints.m_combatHints.activeSelf;
+        bool showSwimmingHints = !showCombatHints && HasNoVisibleHandItems(player);
+
+        DiveHintSnapshot snapshot = new(
+            showFastSwimHint,
+            fastSwimLabel,
+            runKey,
+            descendKey,
+            ascendKey,
+            showCombatHints,
+            showSwimmingHints);
+        if (_hasLastHintSnapshot && _lastHintSnapshot.Matches(snapshot))
+        {
+            return;
+        }
+
+        _lastHintSnapshot = snapshot;
+        _hasLastHintSnapshot = true;
+
         _swimmingHints?.Configure(showFastSwimHint, fastSwimLabel, runKey, descendKey, ascendKey);
         _combatHints?.Configure(showFastSwimHint, fastSwimLabel, runKey, descendKey, ascendKey);
 
-        bool showCombatHints = keyHints.m_combatHints != null && keyHints.m_combatHints.activeSelf;
-        bool showSwimmingHints = !showCombatHints && HasNoVisibleHandItems(player);
         _combatHints?.SetActive(showCombatHints);
         _swimmingHints?.SetActive(showSwimmingHints);
         _combatHints?.RebuildLayout();
@@ -464,12 +523,24 @@ internal static class PlayerDiveKeyHints
         _combatHints?.SetActive(active);
     }
 
+    private static void HideDiveHints()
+    {
+        if (!_hasLastHintSnapshot)
+        {
+            return;
+        }
+
+        SetAllHintsActive(false);
+        _hasLastHintSnapshot = false;
+    }
+
     private static void DestroyHints()
     {
         _swimmingHints?.Destroy();
         _combatHints?.Destroy();
         _swimmingHints = null;
         _combatHints = null;
+        _hasLastHintSnapshot = false;
     }
 
     private static void RebuildLayout(GameObject? hint)

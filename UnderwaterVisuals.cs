@@ -154,25 +154,24 @@ internal static class UnderwaterCameraPatches
         return IsCameraUnderwater(camera, diver) ? VisualMode.Underwater : VisualMode.Surface;
     }
 
-    [HarmonyPrefix]
-    [HarmonyPatch(typeof(GameCamera), nameof(GameCamera.UpdateCamera))]
-    private static void GameCameraUpdateCameraPrefix(GameCamera __instance)
+    private static void ApplyCameraVisualMode(
+        GameCamera gameCamera,
+        VisualMode mode,
+        PlayerDiveController? diver,
+        bool beforeCameraUpdate)
     {
-        VisualMode mode = GetVisualMode(__instance, out _, out _);
-        if (mode == VisualMode.Disabled)
+        if (beforeCameraUpdate)
         {
-            UnderwaterVisualState.ResetAll();
+            if (mode == VisualMode.Disabled)
+            {
+                UnderwaterVisualState.ResetAll();
+                return;
+            }
+
+            UnderwaterVisualState.ApplyCameraOverride(gameCamera);
             return;
         }
 
-        UnderwaterVisualState.ApplyCameraOverride(__instance);
-    }
-
-    [HarmonyPostfix]
-    [HarmonyPatch(typeof(GameCamera), nameof(GameCamera.UpdateCamera))]
-    private static void GameCameraUpdateCameraPostfix(GameCamera __instance)
-    {
-        VisualMode mode = GetVisualMode(__instance, out PlayerDiveController? diver, out _);
         if (mode == VisualMode.Disabled || diver == null)
         {
             UnderwaterVisualState.ResetAll();
@@ -186,34 +185,67 @@ internal static class UnderwaterCameraPatches
             return;
         }
 
-        UnderwaterVisualState.ApplyCameraOverride(__instance);
+        UnderwaterVisualState.ApplyCameraOverride(gameCamera);
         UnderwaterVisualState.ApplyFogOverride(diver);
+    }
+
+    private static bool TryGetUnderwaterSurfaceLevel(WaterVolume? waterVolume, out float waterLevel)
+    {
+        waterLevel = 0f;
+        if (waterVolume == null || waterVolume.m_waterSurface == null)
+        {
+            UnderwaterSurfaceRenderer.Reset(waterVolume);
+            return false;
+        }
+
+        VisualMode mode = GetVisualMode(GameCamera.instance, out _, out Camera? camera);
+        if (mode != VisualMode.Underwater || camera == null)
+        {
+            UnderwaterSurfaceRenderer.Reset(waterVolume);
+            return false;
+        }
+
+        waterLevel = waterVolume.GetWaterSurface(camera.transform.position, 1f);
+        if (camera.transform.position.y >= waterLevel)
+        {
+            UnderwaterSurfaceRenderer.Reset(waterVolume);
+            return false;
+        }
+
+        return true;
+    }
+
+    [HarmonyPrefix]
+    [HarmonyPatch(typeof(GameCamera), nameof(GameCamera.UpdateCamera))]
+    private static void GameCameraUpdateCameraPrefix(GameCamera __instance)
+    {
+        ApplyCameraVisualMode(
+            __instance,
+            GetVisualMode(__instance, out PlayerDiveController? diver, out _),
+            diver,
+            beforeCameraUpdate: true);
+    }
+
+    [HarmonyPostfix]
+    [HarmonyPatch(typeof(GameCamera), nameof(GameCamera.UpdateCamera))]
+    private static void GameCameraUpdateCameraPostfix(GameCamera __instance)
+    {
+        ApplyCameraVisualMode(
+            __instance,
+            GetVisualMode(__instance, out PlayerDiveController? diver, out _),
+            diver,
+            beforeCameraUpdate: false);
     }
 
     [HarmonyPrefix]
     [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.UpdateMaterials))]
     private static void WaterVolumeUpdateMaterialsPrefix(WaterVolume __instance)
     {
-        if (__instance == null || __instance.m_waterSurface == null)
+        if (!TryGetUnderwaterSurfaceLevel(__instance, out float waterLevel))
         {
-            UnderwaterSurfaceRenderer.Reset(__instance);
             return;
         }
 
-        VisualMode mode = GetVisualMode(GameCamera.instance, out _, out Camera? camera);
-        if (mode != VisualMode.Underwater || camera == null)
-        {
-            UnderwaterSurfaceRenderer.Reset(__instance);
-            return;
-        }
-
-        float waterLevelCamera = __instance.GetWaterSurface(camera.transform.position, 1f);
-        if (camera.transform.position.y >= waterLevelCamera)
-        {
-            UnderwaterSurfaceRenderer.Reset(__instance);
-            return;
-        }
-
-        UnderwaterSurfaceRenderer.Apply(__instance, waterLevelCamera);
+        UnderwaterSurfaceRenderer.Apply(__instance, waterLevel);
     }
 }

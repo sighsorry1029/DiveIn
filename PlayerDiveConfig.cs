@@ -44,7 +44,7 @@ public partial class ServerSyncModTemplatePlugin
                 null,
                 new ConfigurationManagerAttributes { Order = 100 }));
         _surfaceStaminaRegenRateMultiplier = config(
-            "3 - Swim Resources",
+            "3 - Regen Rate",
             "Surface Stamina Regen Rate",
             0.5f,
             new ConfigDescription(
@@ -52,7 +52,7 @@ public partial class ServerSyncModTemplatePlugin
                 new AcceptableValueRange<float>(0f, 1f),
                 new ConfigurationManagerAttributes { Order = 110 }));
         _midwaterStaminaRegenRateMultiplier = config(
-            "3 - Swim Resources",
+            "3 - Regen Rate",
             "Midwater Stamina Regen Rate",
             0f,
             new ConfigDescription(
@@ -60,7 +60,7 @@ public partial class ServerSyncModTemplatePlugin
                 new AcceptableValueRange<float>(0f, 1f),
                 new ConfigurationManagerAttributes { Order = 109 }));
         _surfaceEitrRegenRateMultiplier = config(
-            "3 - Swim Resources",
+            "3 - Regen Rate",
             "Surface Eitr Regen Rate",
             0.7f,
             new ConfigDescription(
@@ -68,7 +68,7 @@ public partial class ServerSyncModTemplatePlugin
                 new AcceptableValueRange<float>(0f, 1f),
                 new ConfigurationManagerAttributes { Order = 108 }));
         _midwaterEitrRegenRateMultiplier = config(
-            "3 - Swim Resources",
+            "3 - Regen Rate",
             "Midwater Eitr Regen Rate",
             0.3f,
             new ConfigDescription(
@@ -76,61 +76,61 @@ public partial class ServerSyncModTemplatePlugin
                 new AcceptableValueRange<float>(0f, 1f),
                 new ConfigurationManagerAttributes { Order = 107 }));
         _midwaterIdleStaminaDrainPerDepth = config(
-            "3 - Swim Resources",
+            "4 - Stamina Drain",
             "Midwater Idle Stamina Drain Per Depth",
             0.02f,
             new ConfigDescription(
                 "Idle stamina drained per second per 1m of current liquid depth while your head is underwater. 0 disables idle underwater stamina drain. Example: 0.1 drains 3 stamina per second at 30m depth.",
                 new AcceptableValueRange<float>(0f, 1f),
-                new ConfigurationManagerAttributes { Order = 106 }));
+                new ConfigurationManagerAttributes { Order = 109 }));
         _swimStaminaDrainMultiplierPerDepth = config(
-            "3 - Swim Resources",
+            "4 - Stamina Drain",
             "Swim Stamina Drain Multiplier Per Depth",
             2.5f,
             new ConfigDescription(
                 "Additional moving swim stamina drain percent per 1m of current liquid depth. 1 means 30% extra at 30m; 2.5 means 75% extra at 30m. Applied multiplicatively with base and Fast Swim stamina drain.",
                 new AcceptableValueRange<float>(0f, 5f),
-                new ConfigurationManagerAttributes { Order = 105 }));
+                new ConfigurationManagerAttributes { Order = 108 }));
         _multiplicativeSwimStaminaModifiers = config(
-            "3 - Swim Resources",
+            "4 - Stamina Drain",
             "Multiplicative Swim Stamina Modifiers",
             Toggle.On,
             new ConfigDescription(
-                "If on, status-effect swim stamina use modifiers stack multiplicatively during actual swim stamina consumption. Example: -50% and -60% leaves 20% cost instead of 0%. Tooltips keep vanilla display behavior.",
+                "If on, status-effect swim stamina use modifiers stack multiplicatively during actual swim stamina consumption. Off is vanilla. Example: -50% and -60% leaves 20% cost instead of 0%. Tooltips keep vanilla display behavior.",
                 null,
-                new ConfigurationManagerAttributes { Order = 104 }));
+                new ConfigurationManagerAttributes { Order = 110 }));
         _swimStaminaDrainBaseMultiplier = config(
-            "3 - Swim Resources",
+            "4 - Stamina Drain",
             "Swim Stamina Drain Base Multiplier",
             1f,
             new ConfigDescription(
                 "Multiplier applied to vanilla moving swim stamina drain before depth and Fast Swim multipliers. 1 keeps vanilla cost, 0.5 halves it, 2 doubles it.",
                 new AcceptableValueRange<float>(0.1f, 2f),
-                new ConfigurationManagerAttributes { Order = 103 }));
+                new ConfigurationManagerAttributes { Order = 107 }));
         _fastSwimSpeedMultiplier = config(
-            "4 - Swim Speed",
+            "5 - Swim Speed",
             "Fast Swim Speed Multiplier",
             2f,
             new ConfigDescription(
                 "Swim speed multiplier while Fast Swim is toggled on with the vanilla run key. 1 disables Fast Swim and hides its key hint. Swim skill separately increases base swim speed.",
                 new AcceptableValueRange<float>(1f, 3f),
-                new ConfigurationManagerAttributes { Order = 99 }));
+                new ConfigurationManagerAttributes { Order = 109 }));
         _fastSwimStaminaDrainMultiplier = config(
-            "4 - Swim Speed",
+            "5 - Swim Speed",
             "Fast Swim Stamina Drain Multiplier",
             2f,
             new ConfigDescription(
                 "Moving swim stamina drain multiplier while Fast Swim is toggled on. Applied multiplicatively with base and depth stamina drain.",
                 new AcceptableValueRange<float>(1f, 5f),
-                new ConfigurationManagerAttributes { Order = 98 }));
+                new ConfigurationManagerAttributes { Order = 108 }));
         _playerSwimSkillSpeedMultiplier = config(
-            "4 - Swim Speed",
+            "5 - Swim Speed",
             "Swim Skill Speed Multiplier",
             1.5f,
             new ConfigDescription(
                 "Base swim speed multiplier at Swim skill 100. 1.5 means +50%.",
                 new AcceptableValueRange<float>(1f, 3f),
-                new ConfigurationManagerAttributes { Order = 100 }));
+                new ConfigurationManagerAttributes { Order = 110 }));
         _playerDiveAscendShortcut = config(
             "2 - Player Diving",
             "Dive Ascend Key",

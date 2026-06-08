@@ -48,13 +48,12 @@ public partial class ServerSyncModTemplatePlugin
 
         InitializePlayerDiveConfig();
 
-        InitializeMonsterDiveYaml();
-        ClearRuntimeCaches();
+        InitializeMonsterDiveModule();
 
         _harmony.PatchAll(Assembly.GetExecutingAssembly());
         DiveLocalization.Register();
         SetupWatcher();
-        SetupMonsterDiveYamlWatcher();
+        StartMonsterDiveModule();
 
         Config.Save();
         if (saveOnSet)
@@ -67,16 +66,9 @@ public partial class ServerSyncModTemplatePlugin
     {
         _harmony.UnpatchSelf();
         UnderwaterVisualState.ResetAll();
-        int restoredMonsterCount = RestoreAllTrackedMonsterDiveFlags();
-        if (restoredMonsterCount > 0)
-        {
-            ServerSyncModTemplateLogger.LogInfo($"Restored original dive flags for {restoredMonsterCount} monster instances.");
-        }
-
-        ClearRuntimeCaches();
+        DisposeMonsterDiveModule();
         SaveWithRespectToConfigSet();
         DisposeConfigWatcher();
-        DisposeMonsterDiveYamlWatcher();
     }
 
     private void SetupWatcher()
@@ -125,7 +117,7 @@ public partial class ServerSyncModTemplatePlugin
             {
                 SaveWithRespectToConfigSet(reload: true);
                 UnderwaterVisualState.ResetAll();
-                ClearRuntimeCaches();
+                ReloadMonsterDiveModule();
                 ServerSyncModTemplateLogger.LogInfo("Configuration reload complete.");
             }
             catch (Exception ex)

@@ -122,9 +122,11 @@
         <Compile Include="PlayerDiveConfig.cs"/>
         <Compile Include="PlayerDiveController.cs"/>
         <Compile Include="PlayerDiveIntegration.cs"/>
+        <Compile Include="SwimResourceAdjustments.cs"/>
         <Compile Include="PlayerDiveKeyHints.cs"/>
         <Compile Include="UnderwaterDepthUtils.cs"/>
         <Compile Include="MonsterAIDive.cs" />
+        <Compile Include="MonsterDiveModule.cs"/>
         <Compile Include="MonsterDiveProfiles.cs"/>
         <Compile Include="MonsterDiveMovement.cs"/>
         <Compile Include="MonsterDivePatches.cs"/>

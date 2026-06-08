@@ -1,3 +1,4 @@
+using System;
 using HarmonyLib;
 using UnityEngine;
 
@@ -32,17 +33,26 @@ internal static class PlayerDivePatches
 
     private readonly struct SwimmingStaminaState
     {
-        internal SwimmingStaminaState(PlayerDiveController? diver, float staminaBeforeVanillaSwim, bool isMoving)
+        internal SwimmingStaminaState(
+            PlayerDiveController? diver,
+            float staminaBeforeVanillaSwim,
+            bool isMoving,
+            bool enteredSwimStaminaModifierContext)
         {
             Diver = diver;
             StaminaBeforeVanillaSwim = staminaBeforeVanillaSwim;
             IsMoving = isMoving;
+            EnteredSwimStaminaModifierContext = enteredSwimStaminaModifierContext;
         }
 
         internal PlayerDiveController? Diver { get; }
         internal float StaminaBeforeVanillaSwim { get; }
         internal bool IsMoving { get; }
+        internal bool EnteredSwimStaminaModifierContext { get; }
     }
+
+    [ThreadStatic]
+    private static int _swimStaminaModifierContextDepth;
 
     [HarmonyPostfix]
     [HarmonyPatch(typeof(Player), nameof(Player.Awake))]
@@ -197,7 +207,14 @@ internal static class PlayerDivePatches
 
         diver.RegenWaterStamina(dt);
         diver.ApplyIdleMidwaterStaminaDrain(dt);
-        __state = new SwimmingStaminaState(diver, __instance.m_stamina, targetVel.magnitude >= 0.1f);
+
+        bool isMoving = targetVel.magnitude >= 0.1f;
+        if (isMoving)
+        {
+            BeginSwimStaminaModifierContext();
+        }
+
+        __state = new SwimmingStaminaState(diver, __instance.m_stamina, isMoving, isMoving);
     }
 
     [HarmonyPostfix]
@@ -212,6 +229,16 @@ internal static class PlayerDivePatches
         }
 
         __state.Diver.AdjustMovingSwimStaminaDrain(__state.StaminaBeforeVanillaSwim);
+    }
+
+    [HarmonyFinalizer]
+    [HarmonyPatch(typeof(Player), nameof(Player.OnSwimming))]
+    private static void PlayerOnSwimmingFinalizer(ref SwimmingStaminaState __state)
+    {
+        if (__state.EnteredSwimStaminaModifierContext)
+        {
+            EndSwimStaminaModifierContext();
+        }
     }
 
     [HarmonyPrefix]
@@ -248,9 +275,28 @@ internal static class PlayerDivePatches
     private static bool ShouldUseMultiplicativeSwimStaminaModifiers(float baseStaminaUse, float staminaUse, bool minZero)
     {
         return ServerSyncModTemplatePlugin.UseMultiplicativeSwimStaminaModifiers()
+               && IsInSwimStaminaModifierContext()
                && minZero
                && baseStaminaUse > 0f
                && Mathf.Approximately(staminaUse, baseStaminaUse);
+    }
+
+    private static void BeginSwimStaminaModifierContext()
+    {
+        _swimStaminaModifierContextDepth++;
+    }
+
+    private static void EndSwimStaminaModifierContext()
+    {
+        if (_swimStaminaModifierContextDepth > 0)
+        {
+            _swimStaminaModifierContextDepth--;
+        }
+    }
+
+    private static bool IsInSwimStaminaModifierContext()
+    {
+        return _swimStaminaModifierContextDepth > 0;
     }
 
     [HarmonyPrefix]
@@ -277,8 +323,7 @@ internal static class PlayerDivePatches
             return;
         }
 
-        float gainedEitr = __instance.m_eitr - __state.Eitr;
-        if (gainedEitr <= 0f)
+        if (!SwimResourceAdjustments.TryGetGain(__state.Eitr, __instance.m_eitr, out float gainedEitr))
         {
             return;
         }
@@ -291,7 +336,11 @@ internal static class PlayerDivePatches
             return;
         }
 
-        __instance.m_eitr = Mathf.Min(__instance.GetMaxEitr(), __state.Eitr + gainedEitr * Mathf.Clamp01(regenRate));
+        __instance.m_eitr = SwimResourceAdjustments.GetScaledGainValue(
+            __state.Eitr,
+            __instance.GetMaxEitr(),
+            gainedEitr,
+            regenRate);
         if (__instance.m_nview != null && __instance.m_nview.IsValid())
         {
             __instance.m_nview.GetZDO().Set(ZDOVars.s_eitr, __instance.m_eitr);

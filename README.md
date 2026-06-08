@@ -126,7 +126,7 @@ Darkness Factor = 0.5
 # Acceptable value range: From 0 to 3
 Murkiness Factor = 0.25
 
-[3 - Swim Resources]
+[3 - Regen Rate]
 
 ## Multiplier applied to vanilla stamina regeneration while swimming on the surface with your head above water. 0 matches vanilla swimming behavior, 1 matches normal non-swimming stamina regeneration timing and rate. [Synced with Server]
 # Setting type: Single
@@ -152,6 +152,13 @@ Surface Eitr Regen Rate = 0.7
 # Acceptable value range: From 0 to 1
 Midwater Eitr Regen Rate = 0.3
 
+[4 - Stamina Drain]
+
+## If on, status-effect swim stamina use modifiers stack multiplicatively during actual swim stamina consumption. Off is vanilla. Example: -50% and -60% leaves 20% cost instead of 0%. Tooltips keep vanilla display behavior. [Synced with Server]
+# Setting type: Toggle
+# Default value: On
+Multiplicative Swim Stamina Modifiers = On
+
 ## Idle stamina drained per second per 1m of current liquid depth while your head is underwater. 0 disables idle underwater stamina drain. Example: 0.1 drains 3 stamina per second at 30m depth. [Synced with Server]
 # Setting type: Single
 # Default value: 0.02
@@ -164,18 +171,13 @@ Midwater Idle Stamina Drain Per Depth = 0.02
 # Acceptable value range: From 0 to 5
 Swim Stamina Drain Multiplier Per Depth = 2.5
 
-## If on, status-effect swim stamina use modifiers stack multiplicatively during actual swim stamina consumption. Example: -50% and -60% leaves 20% cost instead of 0%. Tooltips keep vanilla display behavior. [Synced with Server]
-# Setting type: Toggle
-# Default value: On
-Multiplicative Swim Stamina Modifiers = On
-
 ## Multiplier applied to vanilla moving swim stamina drain before depth and Fast Swim multipliers. 1 keeps vanilla cost, 0.5 halves it, 2 doubles it. [Synced with Server]
 # Setting type: Single
 # Default value: 1
 # Acceptable value range: From 0.1 to 2
 Swim Stamina Drain Base Multiplier = 1
 
-[4 - Swim Speed]
+[5 - Swim Speed]
 
 ## Base swim speed multiplier at Swim skill 100. 1.5 means +50%. [Synced with Server]
 # Setting type: Single

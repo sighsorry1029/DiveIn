@@ -327,8 +327,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
 
     internal void AdjustMovingSwimStaminaDrain(float staminaBeforeVanillaSwim)
     {
-        float vanillaDrain = Mathf.Max(0f, staminaBeforeVanillaSwim - Player.m_stamina);
-        if (vanillaDrain <= 0f)
+        if (!SwimResourceAdjustments.TryGetDrain(staminaBeforeVanillaSwim, Player.m_stamina, out float vanillaDrain))
         {
             return;
         }
@@ -339,14 +338,18 @@ internal sealed class PlayerDiveController : MonoBehaviour
             return;
         }
 
-        float targetDrain = vanillaDrain * drainMultiplier;
-        if (targetDrain > vanillaDrain)
+        float targetStamina = SwimResourceAdjustments.GetScaledDrainValue(
+            staminaBeforeVanillaSwim,
+            Player.GetMaxStamina(),
+            vanillaDrain,
+            drainMultiplier);
+        if (targetStamina < Player.m_stamina)
         {
-            Player.UseStamina(targetDrain - vanillaDrain);
+            Player.UseStamina(Player.m_stamina - targetStamina);
             return;
         }
 
-        Player.m_stamina = Mathf.Min(Player.GetMaxStamina(), staminaBeforeVanillaSwim - targetDrain);
+        Player.m_stamina = targetStamina;
     }
 
     internal void UpdateSwimSpeed()
