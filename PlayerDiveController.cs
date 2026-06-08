@@ -325,22 +325,28 @@ internal sealed class PlayerDiveController : MonoBehaviour
         Player.UseStamina(drainPerSecond * dt);
     }
 
-    internal void ApplyExtraSwimStaminaDrain(float dt)
+    internal void AdjustMovingSwimStaminaDrain(float staminaBeforeVanillaSwim)
     {
-        float drainMultiplier = GetExtraSwimStaminaDrainMultiplier();
-        if (drainMultiplier <= 1f)
+        float vanillaDrain = Mathf.Max(0f, staminaBeforeVanillaSwim - Player.m_stamina);
+        if (vanillaDrain <= 0f)
         {
             return;
         }
 
-        float staminaDrain = GetModifiedSwimStaminaDrain();
-        float extraDrainMultiplier = drainMultiplier - 1f;
-        if (extraDrainMultiplier <= 0f)
+        float drainMultiplier = GetMovingSwimStaminaDrainMultiplier();
+        if (Mathf.Approximately(drainMultiplier, 1f))
         {
             return;
         }
 
-        Player.UseStamina(dt * staminaDrain * Game.m_moveStaminaRate * extraDrainMultiplier);
+        float targetDrain = vanillaDrain * drainMultiplier;
+        if (targetDrain > vanillaDrain)
+        {
+            Player.UseStamina(targetDrain - vanillaDrain);
+            return;
+        }
+
+        Player.m_stamina = Mathf.Min(Player.GetMaxStamina(), staminaBeforeVanillaSwim - targetDrain);
     }
 
     internal void UpdateSwimSpeed()
@@ -399,15 +405,6 @@ internal sealed class PlayerDiveController : MonoBehaviour
         }
 
         return Mathf.Max(1f, ServerSyncModTemplatePlugin._fastSwimStaminaDrainMultiplier.Value);
-    }
-
-    private float GetModifiedSwimStaminaDrain()
-    {
-        float skillFactor = Player.m_skills.GetSkillFactor(Skills.SkillType.Swim);
-        float staminaDrain = Mathf.Lerp(Player.m_swimStaminaDrainMinSkill, Player.m_swimStaminaDrainMaxSkill, skillFactor);
-        staminaDrain += staminaDrain * Player.GetEquipmentSwimStaminaModifier();
-        Player.m_seman.ModifySwimStaminaUsage(staminaDrain, ref staminaDrain);
-        return staminaDrain;
     }
 
     internal void Dive(float dt, bool ascend, out Vector3? defaultMoveDir)
@@ -483,9 +480,10 @@ internal sealed class PlayerDiveController : MonoBehaviour
         return velocity;
     }
 
-    private float GetExtraSwimStaminaDrainMultiplier()
+    private float GetMovingSwimStaminaDrainMultiplier()
     {
-        return GetDepthSwimStaminaDrainMultiplier() * Mathf.Max(1f, _activeSwimRunStaminaDrainMultiplier);
+        float baseMultiplier = Mathf.Clamp(ServerSyncModTemplatePlugin._swimStaminaDrainBaseMultiplier.Value, 0.1f, 2f);
+        return baseMultiplier * GetDepthSwimStaminaDrainMultiplier() * Mathf.Max(1f, _activeSwimRunStaminaDrainMultiplier);
     }
 
     private float GetDepthSwimStaminaDrainMultiplier()

@@ -19,6 +19,8 @@ public partial class ServerSyncModTemplatePlugin
     internal static ConfigEntry<float> _midwaterEitrRegenRateMultiplier = null!;
     internal static ConfigEntry<float> _midwaterIdleStaminaDrainPerDepth = null!;
     internal static ConfigEntry<float> _swimStaminaDrainMultiplierPerDepth = null!;
+    internal static ConfigEntry<Toggle> _multiplicativeSwimStaminaModifiers = null!;
+    internal static ConfigEntry<float> _swimStaminaDrainBaseMultiplier = null!;
     internal static ConfigEntry<float> _playerSwimSkillSpeedMultiplier = null!;
     internal static ConfigEntry<float> _fastSwimSpeedMultiplier = null!;
     internal static ConfigEntry<float> _fastSwimStaminaDrainMultiplier = null!;
@@ -86,9 +88,25 @@ public partial class ServerSyncModTemplatePlugin
             "Swim Stamina Drain Multiplier Per Depth",
             2.5f,
             new ConfigDescription(
-                "Additional moving swim stamina drain percent per 1m of current liquid depth. 1 means 30% extra at 30m; 2.5 means 75% extra at 30m. Applied multiplicatively with Fast Swim stamina drain.",
+                "Additional moving swim stamina drain percent per 1m of current liquid depth. 1 means 30% extra at 30m; 2.5 means 75% extra at 30m. Applied multiplicatively with base and Fast Swim stamina drain.",
                 new AcceptableValueRange<float>(0f, 5f),
                 new ConfigurationManagerAttributes { Order = 105 }));
+        _multiplicativeSwimStaminaModifiers = config(
+            "3 - Swim Resources",
+            "Multiplicative Swim Stamina Modifiers",
+            Toggle.On,
+            new ConfigDescription(
+                "If on, status-effect swim stamina use modifiers stack multiplicatively during actual swim stamina consumption. Example: -50% and -60% leaves 20% cost instead of 0%. Tooltips keep vanilla display behavior.",
+                null,
+                new ConfigurationManagerAttributes { Order = 104 }));
+        _swimStaminaDrainBaseMultiplier = config(
+            "3 - Swim Resources",
+            "Swim Stamina Drain Base Multiplier",
+            1f,
+            new ConfigDescription(
+                "Multiplier applied to vanilla moving swim stamina drain before depth and Fast Swim multipliers. 1 keeps vanilla cost, 0.5 halves it, 2 doubles it.",
+                new AcceptableValueRange<float>(0.1f, 2f),
+                new ConfigurationManagerAttributes { Order = 103 }));
         _fastSwimSpeedMultiplier = config(
             "4 - Swim Speed",
             "Fast Swim Speed Multiplier",
@@ -102,7 +120,7 @@ public partial class ServerSyncModTemplatePlugin
             "Fast Swim Stamina Drain Multiplier",
             2f,
             new ConfigDescription(
-                "Moving swim stamina drain multiplier while Fast Swim is toggled on. Applied multiplicatively with Swim Stamina Drain Multiplier Per Depth.",
+                "Moving swim stamina drain multiplier while Fast Swim is toggled on. Applied multiplicatively with base and depth stamina drain.",
                 new AcceptableValueRange<float>(1f, 5f),
                 new ConfigurationManagerAttributes { Order = 98 }));
         _playerSwimSkillSpeedMultiplier = config(
@@ -174,6 +192,11 @@ public partial class ServerSyncModTemplatePlugin
     internal static bool IsSwimRunEnabled()
     {
         return _fastSwimSpeedMultiplier != null && _fastSwimSpeedMultiplier.Value > 1.001f;
+    }
+
+    internal static bool UseMultiplicativeSwimStaminaModifiers()
+    {
+        return _multiplicativeSwimStaminaModifiers?.Value == Toggle.On;
     }
 
     internal static bool IsDiveAscendInputHeld()

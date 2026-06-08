@@ -158,11 +158,22 @@ Midwater Eitr Regen Rate = 0.3
 # Acceptable value range: From 0 to 1
 Midwater Idle Stamina Drain Per Depth = 0.02
 
-## Additional moving swim stamina drain percent per 1m of current liquid depth. 1 means 30% extra at 30m; 2.5 means 75% extra at 30m. Applied multiplicatively with Fast Swim stamina drain. [Synced with Server]
+## Additional moving swim stamina drain percent per 1m of current liquid depth. 1 means 30% extra at 30m; 2.5 means 75% extra at 30m. Applied multiplicatively with base and Fast Swim stamina drain. [Synced with Server]
 # Setting type: Single
 # Default value: 2.5
 # Acceptable value range: From 0 to 5
 Swim Stamina Drain Multiplier Per Depth = 2.5
+
+## If on, status-effect swim stamina use modifiers stack multiplicatively during actual swim stamina consumption. Example: -50% and -60% leaves 20% cost instead of 0%. Tooltips keep vanilla display behavior. [Synced with Server]
+# Setting type: Toggle
+# Default value: On
+Multiplicative Swim Stamina Modifiers = On
+
+## Multiplier applied to vanilla moving swim stamina drain before depth and Fast Swim multipliers. 1 keeps vanilla cost, 0.5 halves it, 2 doubles it. [Synced with Server]
+# Setting type: Single
+# Default value: 1
+# Acceptable value range: From 0.1 to 2
+Swim Stamina Drain Base Multiplier = 1
 
 [4 - Swim Speed]
 
@@ -178,7 +189,7 @@ Swim Skill Speed Multiplier = 1.5
 # Acceptable value range: From 1 to 3
 Fast Swim Speed Multiplier = 2
 
-## Moving swim stamina drain multiplier while Fast Swim is toggled on. Applied multiplicatively with Swim Stamina Drain Multiplier Per Depth. [Synced with Server]
+## Moving swim stamina drain multiplier while Fast Swim is toggled on. Applied multiplicatively with base and depth stamina drain. [Synced with Server]
 # Setting type: Single
 # Default value: 2
 # Acceptable value range: From 1 to 5

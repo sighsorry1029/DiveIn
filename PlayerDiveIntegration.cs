@@ -30,6 +30,20 @@ internal static class PlayerDivePatches
         internal float Eitr { get; }
     }
 
+    private readonly struct SwimmingStaminaState
+    {
+        internal SwimmingStaminaState(PlayerDiveController? diver, float staminaBeforeVanillaSwim, bool isMoving)
+        {
+            Diver = diver;
+            StaminaBeforeVanillaSwim = staminaBeforeVanillaSwim;
+            IsMoving = isMoving;
+        }
+
+        internal PlayerDiveController? Diver { get; }
+        internal float StaminaBeforeVanillaSwim { get; }
+        internal bool IsMoving { get; }
+    }
+
     [HarmonyPostfix]
     [HarmonyPatch(typeof(Player), nameof(Player.Awake))]
     private static void PlayerAwakePostfix(Player __instance)
@@ -167,8 +181,9 @@ internal static class PlayerDivePatches
 
     [HarmonyPrefix]
     [HarmonyPatch(typeof(Player), nameof(Player.OnSwimming))]
-    private static void PlayerOnSwimmingPrefix(Player __instance, Vector3 targetVel, float dt)
+    private static void PlayerOnSwimmingPrefix(Player __instance, Vector3 targetVel, float dt, out SwimmingStaminaState __state)
     {
+        __state = default;
         if (__instance != Player.m_localPlayer)
         {
             return;
@@ -182,26 +197,60 @@ internal static class PlayerDivePatches
 
         diver.RegenWaterStamina(dt);
         diver.ApplyIdleMidwaterStaminaDrain(dt);
+        __state = new SwimmingStaminaState(diver, __instance.m_stamina, targetVel.magnitude >= 0.1f);
     }
 
     [HarmonyPostfix]
     [HarmonyPatch(typeof(Player), nameof(Player.OnSwimming))]
-    private static void PlayerOnSwimmingPostfix(Player __instance, Vector3 targetVel, float dt)
+    private static void PlayerOnSwimmingPostfix(Player __instance, ref SwimmingStaminaState __state)
     {
         if (__instance != Player.m_localPlayer
-            || targetVel.magnitude < 0.1f
-            )
+            || __state.Diver == null
+            || !__state.IsMoving)
         {
             return;
         }
 
-        PlayerDiveController? diver = PlayerDiveUtils.EnsureLocalDiver();
-        if (diver == null)
+        __state.Diver.AdjustMovingSwimStaminaDrain(__state.StaminaBeforeVanillaSwim);
+    }
+
+    [HarmonyPrefix]
+    [HarmonyPatch(typeof(SEMan), nameof(SEMan.ModifySwimStaminaUsage))]
+    private static bool SEManModifySwimStaminaUsagePrefix(SEMan __instance, float baseStaminaUse, ref float staminaUse, bool minZero)
+    {
+        if (!ShouldUseMultiplicativeSwimStaminaModifiers(baseStaminaUse, staminaUse, minZero))
         {
-            return;
+            return true;
         }
 
-        diver.ApplyExtraSwimStaminaDrain(dt);
+        float modifier = 1f;
+        foreach (StatusEffect statusEffect in __instance.m_statusEffects)
+        {
+            if (statusEffect == null)
+            {
+                continue;
+            }
+
+            float modifiedUse = baseStaminaUse;
+            statusEffect.ModifySwimStaminaUsage(baseStaminaUse, ref modifiedUse);
+            if (float.IsNaN(modifiedUse) || float.IsInfinity(modifiedUse))
+            {
+                continue;
+            }
+
+            modifier *= Mathf.Max(0f, modifiedUse / baseStaminaUse);
+        }
+
+        staminaUse = Mathf.Max(0f, baseStaminaUse * modifier);
+        return false;
+    }
+
+    private static bool ShouldUseMultiplicativeSwimStaminaModifiers(float baseStaminaUse, float staminaUse, bool minZero)
+    {
+        return ServerSyncModTemplatePlugin.UseMultiplicativeSwimStaminaModifiers()
+               && minZero
+               && baseStaminaUse > 0f
+               && Mathf.Approximately(staminaUse, baseStaminaUse);
     }
 
     [HarmonyPrefix]
