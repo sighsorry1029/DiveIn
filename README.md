@@ -25,6 +25,7 @@ Recommend to use with RtDOcean. There is configured sample for it.
 - Swimming key hint labels are localized for supported Valheim languages.
 - Surface swimming keeps the player's vanilla swim depth and only changes depth while diving.
 - Attacking, secondary attacking, and guarding underwater stop swim movement so combat input takes priority.
+- Player-owned projectiles can be weakened underwater with synced TTL, speed, and damage multipliers.
 - Use equipment in water except that is in blacklist.
 
 ### Creature Diving
@@ -196,6 +197,26 @@ Fast Swim Speed Multiplier = 2
 # Default value: 2
 # Acceptable value range: From 1 to 5
 Fast Swim Stamina Drain Multiplier = 2
+
+[6 - Underwater Projectiles]
+
+## Multiplier applied once to player-owned projectiles when they are fired underwater. 1 keeps vanilla lifetime; lower values shorten underwater range. [Synced with Server]
+# Setting type: Single
+# Default value: 1
+# Acceptable value range: From 0.05 to 1
+Player Projectile Underwater TTL Multiplier = 1
+
+## Multiplier applied once to player-owned projectile velocity when fired underwater. 1 keeps vanilla speed; lower values slow underwater projectiles. [Synced with Server]
+# Setting type: Single
+# Default value: 1
+# Acceptable value range: From 0.05 to 1
+Player Projectile Underwater Speed Multiplier = 1
+
+## Multiplier applied once to player-owned projectile damage when fired underwater. 1 keeps vanilla damage; 0 removes projectile damage underwater. [Synced with Server]
+# Setting type: Single
+# Default value: 1
+# Acceptable value range: From 0 to 1
+Player Projectile Underwater Damage Multiplier = 1
 
 ```
 

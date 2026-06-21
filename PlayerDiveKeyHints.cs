@@ -100,15 +100,20 @@ internal static class PlayerDiveKeyHints
                 return;
             }
 
-            Label!.gameObject.SetActive(true);
-            Label.text = label;
+            SetText(Label, label);
             foreach (TMP_Text extraText in ExtraTexts)
             {
                 extraText.gameObject.SetActive(false);
             }
 
-            Key!.gameObject.SetActive(true);
-            Key.text = keyText;
+            SetText(Key, keyText);
+        }
+
+        public bool Matches(string label, string keyText)
+        {
+            return IsValid
+                   && string.Equals(Label!.text, label, StringComparison.Ordinal)
+                   && string.Equals(Key!.text, keyText, StringComparison.Ordinal);
         }
 
         public void SetActive(bool active)
@@ -125,6 +130,20 @@ internal static class PlayerDiveKeyHints
             {
                 UnityEngine.Object.Destroy(Root);
             }
+        }
+
+        private static void SetText(TMP_Text? text, string value)
+        {
+            if (text == null)
+            {
+                return;
+            }
+
+            Localization.instance?.RemoveTextFromCache(text);
+            text.gameObject.SetActive(true);
+            text.text = value;
+            text.SetVerticesDirty();
+            text.SetLayoutDirty();
         }
     }
 
@@ -160,6 +179,24 @@ internal static class PlayerDiveKeyHints
 
             DescendHint.Configure(DiveLocalization.Localize(DiveLocalization.DescendKey), descendKey);
             AscendHint.Configure(DiveLocalization.Localize(DiveLocalization.AscendKey), ascendKey);
+        }
+
+        public bool MatchesConfiguration(bool active, bool showRunHint, string fastSwimLabel, string runKey, string descendKey, string ascendKey)
+        {
+            if (!IsValid || (Root != null && Root.activeSelf != active))
+            {
+                return false;
+            }
+
+            if (RunHint.Root.activeSelf != active && (showRunHint || RunHint.Root.activeSelf))
+            {
+                return false;
+            }
+
+            bool runMatches = !showRunHint || RunHint.Matches(fastSwimLabel, runKey);
+            return runMatches
+                   && DescendHint.Matches(DiveLocalization.Localize(DiveLocalization.DescendKey), descendKey)
+                   && AscendHint.Matches(DiveLocalization.Localize(DiveLocalization.AscendKey), ascendKey);
         }
 
         public void SetActive(bool active)
@@ -251,7 +288,24 @@ internal static class PlayerDiveKeyHints
             showSwimmingHints);
         if (_hasLastHintSnapshot && _lastHintSnapshot.Matches(snapshot))
         {
-            return;
+            bool combatMatches = _combatHints?.MatchesConfiguration(
+                showCombatHints,
+                showFastSwimHint,
+                fastSwimLabel,
+                runKey,
+                descendKey,
+                ascendKey) == true;
+            bool swimmingMatches = _swimmingHints?.MatchesConfiguration(
+                showSwimmingHints,
+                showFastSwimHint,
+                fastSwimLabel,
+                runKey,
+                descendKey,
+                ascendKey) == true;
+            if (combatMatches && swimmingMatches)
+            {
+                return;
+            }
         }
 
         _lastHintSnapshot = snapshot;
@@ -433,7 +487,8 @@ internal static class PlayerDiveKeyHints
             return null;
         }
 
-        return texts.FirstOrDefault(static text => HierarchyNameContainsToken(text, KeyTextNameTokens))
+        return texts.FirstOrDefault(static text => string.Equals(text.name, "Key", StringComparison.OrdinalIgnoreCase))
+               ?? texts.FirstOrDefault(static text => HierarchyNameContainsToken(text, KeyTextNameTokens))
                ?? texts.FirstOrDefault(static text => LooksLikeKeyBindingText(text.text))
                ?? texts.OrderBy(static text => text.transform.position.x).LastOrDefault();
     }
@@ -448,7 +503,8 @@ internal static class PlayerDiveKeyHints
             return null;
         }
 
-        return candidates.FirstOrDefault(static text => HierarchyNameContainsToken(text, LabelTextNameTokens))
+        return candidates.FirstOrDefault(static text => string.Equals(text.name, "Text", StringComparison.OrdinalIgnoreCase))
+               ?? candidates.FirstOrDefault(static text => HierarchyNameContainsToken(text, LabelTextNameTokens))
                ?? candidates.FirstOrDefault(static text => !LooksLikeKeyBindingText(text.text))
                ?? candidates.OrderBy(static text => text.transform.position.x).FirstOrDefault();
     }

@@ -24,6 +24,9 @@ public partial class ServerSyncModTemplatePlugin
     internal static ConfigEntry<float> _playerSwimSkillSpeedMultiplier = null!;
     internal static ConfigEntry<float> _fastSwimSpeedMultiplier = null!;
     internal static ConfigEntry<float> _fastSwimStaminaDrainMultiplier = null!;
+    internal static ConfigEntry<float> _playerProjectileUnderwaterTtlMultiplier = null!;
+    internal static ConfigEntry<float> _playerProjectileUnderwaterSpeedMultiplier = null!;
+    internal static ConfigEntry<float> _playerProjectileUnderwaterDamageMultiplier = null!;
     internal static ConfigEntry<KeyboardShortcut> _playerDiveAscendShortcut = null!;
     internal static ConfigEntry<KeyboardShortcut> _playerDiveDescendShortcut = null!;
     internal static ConfigEntry<float> _underwaterDarknessFactor = null!;
@@ -131,6 +134,30 @@ public partial class ServerSyncModTemplatePlugin
                 "Base swim speed multiplier at Swim skill 100. 1.5 means +50%.",
                 new AcceptableValueRange<float>(1f, 3f),
                 new ConfigurationManagerAttributes { Order = 110 }));
+        _playerProjectileUnderwaterTtlMultiplier = config(
+            "6 - Underwater Projectiles",
+            "Player Projectile Underwater TTL Multiplier",
+            1f,
+            new ConfigDescription(
+                "Multiplier applied once to player-owned projectiles when they are fired underwater. 1 keeps vanilla lifetime; lower values shorten underwater range.",
+                new AcceptableValueRange<float>(0.05f, 1f),
+                new ConfigurationManagerAttributes { Order = 110 }));
+        _playerProjectileUnderwaterSpeedMultiplier = config(
+            "6 - Underwater Projectiles",
+            "Player Projectile Underwater Speed Multiplier",
+            1f,
+            new ConfigDescription(
+                "Multiplier applied once to player-owned projectile velocity when fired underwater. 1 keeps vanilla speed; lower values slow underwater projectiles.",
+                new AcceptableValueRange<float>(0.05f, 1f),
+                new ConfigurationManagerAttributes { Order = 109 }));
+        _playerProjectileUnderwaterDamageMultiplier = config(
+            "6 - Underwater Projectiles",
+            "Player Projectile Underwater Damage Multiplier",
+            1f,
+            new ConfigDescription(
+                "Multiplier applied once to player-owned projectile damage when fired underwater. 1 keeps vanilla damage; 0 removes projectile damage underwater.",
+                new AcceptableValueRange<float>(0f, 1f),
+                new ConfigurationManagerAttributes { Order = 108 }));
         _playerDiveAscendShortcut = config(
             "2 - Player Diving",
             "Dive Ascend Key",
@@ -197,6 +224,28 @@ public partial class ServerSyncModTemplatePlugin
     internal static bool UseMultiplicativeSwimStaminaModifiers()
     {
         return _multiplicativeSwimStaminaModifiers?.Value == Toggle.On;
+    }
+
+    internal static bool HasPlayerProjectileUnderwaterPenalty()
+    {
+        return GetPlayerProjectileUnderwaterTtlMultiplier() < 0.999f
+               || GetPlayerProjectileUnderwaterSpeedMultiplier() < 0.999f
+               || GetPlayerProjectileUnderwaterDamageMultiplier() < 0.999f;
+    }
+
+    internal static float GetPlayerProjectileUnderwaterTtlMultiplier()
+    {
+        return Mathf.Clamp(_playerProjectileUnderwaterTtlMultiplier?.Value ?? 1f, 0.05f, 1f);
+    }
+
+    internal static float GetPlayerProjectileUnderwaterSpeedMultiplier()
+    {
+        return Mathf.Clamp(_playerProjectileUnderwaterSpeedMultiplier?.Value ?? 1f, 0.05f, 1f);
+    }
+
+    internal static float GetPlayerProjectileUnderwaterDamageMultiplier()
+    {
+        return Mathf.Clamp01(_playerProjectileUnderwaterDamageMultiplier?.Value ?? 1f);
     }
 
     internal static bool IsDiveAscendInputHeld()
