@@ -30,6 +30,7 @@ public partial class ServerSyncModTemplatePlugin
     private FileSystemWatcher _watcher = null!;
     private readonly object _reloadLock = new();
     private DateTime _lastConfigReloadTime;
+    private string? _lastConfigFileText;
     private const long RELOAD_DELAY = 10000000;
 
     public enum Toggle
@@ -56,6 +57,7 @@ public partial class ServerSyncModTemplatePlugin
         StartMonsterDiveModule();
 
         Config.Save();
+        _lastConfigFileText = ReadFileTextIfExists(ConfigFileFullPath);
         if (saveOnSet)
         {
             Config.SaveOnConfigSet = saveOnSet;
@@ -115,7 +117,14 @@ public partial class ServerSyncModTemplatePlugin
 
             try
             {
+                string configFileText = File.ReadAllText(ConfigFileFullPath);
+                if (string.Equals(_lastConfigFileText, configFileText, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
                 SaveWithRespectToConfigSet(reload: true);
+                _lastConfigFileText = ReadFileTextIfExists(ConfigFileFullPath);
                 UnderwaterVisualState.ResetAll();
                 ReloadMonsterDiveModule();
                 ServerSyncModTemplateLogger.LogInfo("Configuration reload complete.");
@@ -125,6 +134,11 @@ public partial class ServerSyncModTemplatePlugin
                 ServerSyncModTemplateLogger.LogError($"Error reloading configuration: {ex.Message}");
             }
         }
+    }
+
+    private static string? ReadFileTextIfExists(string path)
+    {
+        return File.Exists(path) ? File.ReadAllText(path) : null;
     }
 
     private void SaveWithRespectToConfigSet(bool reload = false)

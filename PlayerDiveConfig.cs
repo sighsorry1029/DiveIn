@@ -137,7 +137,7 @@ public partial class ServerSyncModTemplatePlugin
         _playerProjectileUnderwaterTtlMultiplier = config(
             "6 - Underwater Projectiles",
             "Player Projectile Underwater TTL Multiplier",
-            1f,
+            0.5f,
             new ConfigDescription(
                 "Multiplier applied once to player-owned projectiles when they are fired underwater. 1 keeps vanilla lifetime; lower values shorten underwater range.",
                 new AcceptableValueRange<float>(0.05f, 1f),
@@ -145,7 +145,7 @@ public partial class ServerSyncModTemplatePlugin
         _playerProjectileUnderwaterSpeedMultiplier = config(
             "6 - Underwater Projectiles",
             "Player Projectile Underwater Speed Multiplier",
-            1f,
+            0.5f,
             new ConfigDescription(
                 "Multiplier applied once to player-owned projectile velocity when fired underwater. 1 keeps vanilla speed; lower values slow underwater projectiles.",
                 new AcceptableValueRange<float>(0.05f, 1f),
@@ -153,7 +153,7 @@ public partial class ServerSyncModTemplatePlugin
         _playerProjectileUnderwaterDamageMultiplier = config(
             "6 - Underwater Projectiles",
             "Player Projectile Underwater Damage Multiplier",
-            1f,
+            0.5f,
             new ConfigDescription(
                 "Multiplier applied once to player-owned projectile damage when fired underwater. 1 keeps vanilla damage; 0 removes projectile damage underwater.",
                 new AcceptableValueRange<float>(0f, 1f),

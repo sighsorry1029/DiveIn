@@ -31,14 +31,17 @@ Recommend to use with RtDOcean. There is configured sample for it.
 ### Creature Diving
 
 - Configured monster prefabs stop avoiding water and can navigate underwater.
+- DiveIn.yaml can make configured monsters spawned underwater preserve their initial spawn depth instead of floating to the surface first.
 - Idle monsters use passive depth profiles and slowly drift within their assigned depth range.
-- Alerted or chasing monsters adjust depth toward their target within global depth limits.
+- Alerted or chasing monsters adjust depth toward their target within their YAML active depth limits.
+- DiveIn.yaml can keep chasing monsters below a minimum active dive depth.
+- DiveIn.yaml can make configured monsters flee from targets when they are pulled into shallow terrain water.
 - Underwater pathing uses route checks and steering avoidance samples instead of blindly forcing success.
 - Underwater creature movement uses high-quality move-plan checks by default.
 
 ### DiveIn.yaml
 
-This file defines which monsters can dive and what passive depth band each monster uses.
+This file defines which monsters can dive and what passive and active dive behavior each monster group uses.
 
 ```
 # Monster dive configuration for DiveIn.
@@ -48,7 +51,10 @@ surface_patrol: # You can use any group name. Add your own groups
   passive_min_depth: 0 # Shallowest passive dive depth used while the monster has no target and is not alerted.
   passive_center_depth: 10 # Center depth used by the passive sine-wave swimming pattern.
   passive_max_depth: 20 # Deepest passive dive depth used while the monster has no target and is not alerted.
+  active_min_depth: 0.25 # Shallowest active target depth used while alerted or chasing a target.
   active_depth_adjust_speed: 2 # How quickly this group adjusts swim depth while alerted or chasing a target.
+  shallow_water_flee_depth: 0 # Current terrain water depth below this value makes the monster flee from its target. 0 disables it.
+  preserve_spawn_depth: false # If true, monsters spawned underwater keep their initial spawn depth instead of surfacing first.
   prefabs: # Monster prefab names assigned to this passive profile group.
     - Leech
     - Abomination
@@ -59,14 +65,20 @@ mid_water:
   passive_min_depth: 0
   passive_center_depth: 15
   passive_max_depth: 30
+  active_min_depth: 0.25
   active_depth_adjust_speed: 2
+  shallow_water_flee_depth: 0
+  preserve_spawn_depth: false
   prefabs: []
 
 deep_patrol:
   passive_min_depth: 10
   passive_center_depth: 20
   passive_max_depth: 30
+  active_min_depth: 0.25
   active_depth_adjust_speed: 2
+  shallow_water_flee_depth: 0
+  preserve_spawn_depth: false
   prefabs: []
 
 ## Mod prefabs sample
@@ -75,7 +87,10 @@ mods_surface:
   passive_min_depth: 0
   passive_center_depth: 10
   passive_max_depth: 20
+  active_min_depth: 0.25
   active_depth_adjust_speed: 2
+  shallow_water_flee_depth: 0
+  preserve_spawn_depth: false
   prefabs:
     - Neck_RtD
     - Animal_Dolphin_RtD
@@ -202,21 +217,21 @@ Fast Swim Stamina Drain Multiplier = 2
 
 ## Multiplier applied once to player-owned projectiles when they are fired underwater. 1 keeps vanilla lifetime; lower values shorten underwater range. [Synced with Server]
 # Setting type: Single
-# Default value: 1
+# Default value: 0.5
 # Acceptable value range: From 0.05 to 1
-Player Projectile Underwater TTL Multiplier = 1
+Player Projectile Underwater TTL Multiplier = 0.5
 
 ## Multiplier applied once to player-owned projectile velocity when fired underwater. 1 keeps vanilla speed; lower values slow underwater projectiles. [Synced with Server]
 # Setting type: Single
-# Default value: 1
+# Default value: 0.5
 # Acceptable value range: From 0.05 to 1
-Player Projectile Underwater Speed Multiplier = 1
+Player Projectile Underwater Speed Multiplier = 0.5
 
 ## Multiplier applied once to player-owned projectile damage when fired underwater. 1 keeps vanilla damage; 0 removes projectile damage underwater. [Synced with Server]
 # Setting type: Single
-# Default value: 1
+# Default value: 0.5
 # Acceptable value range: From 0 to 1
-Player Projectile Underwater Damage Multiplier = 1
+Player Projectile Underwater Damage Multiplier = 0.5
 
 ```
 

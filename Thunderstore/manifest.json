@@ -1,6 +1,6 @@
 {
   "name": "Dive_In",
-  "version_number": "1.1.1",
+  "version_number": "1.1.2",
   "website_url": "https://discord.gg/jkcJCq2sK5",
   "description": "Diving underwater with configurable controls, Fast Swim, surface/midwater stamina regen, and depth drain. Configured creatures can chase and navigate underwater. Includes water combat/equipment, localized key hints, and improved underwater visuals.",
   "dependencies": [

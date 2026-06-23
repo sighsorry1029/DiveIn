@@ -36,13 +36,17 @@ public partial class ServerSyncModTemplatePlugin
         public float PassiveMinDepth { get; set; }
         public float PassiveCenterDepth { get; set; }
         public float PassiveMaxDepth { get; set; }
+        public float? ActiveMinDepth { get; set; }
         public float? ActiveDepthAdjustSpeed { get; set; }
+        public float? ShallowWaterFleeDepth { get; set; }
+        public bool? PreserveSpawnDepth { get; set; }
         public List<string> Prefabs { get; set; } = new();
     }
 
     private FileSystemWatcher _monsterDiveYamlWatcher = null!;
     private DateTime _lastMonsterDiveYamlReloadTime;
     private static CustomSyncedValue<string> _monsterDiveYamlSync = null!;
+    private static string? _lastAppliedMonsterDiveYamlText;
 
     private void InitializeMonsterDiveYaml()
     {
@@ -188,6 +192,11 @@ public partial class ServerSyncModTemplatePlugin
             return false;
         }
 
+        if (string.Equals(_lastAppliedMonsterDiveYamlText, yamlText, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
         MonsterDiveYamlRoot root;
         try
         {
@@ -214,8 +223,11 @@ public partial class ServerSyncModTemplatePlugin
             string groupName = groupEntry.Key;
             MonsterDiveYamlGroup group = groupEntry.Value;
             PassiveDepthProfile passiveProfile = NormalizePassiveDepthProfile(groupName, group.PassiveMinDepth, group.PassiveCenterDepth, group.PassiveMaxDepth);
+            float activeMinDepth = NormalizeActiveMinDepth(groupName, group.ActiveMinDepth);
             float activeDepthAdjustSpeed = NormalizeActiveDepthAdjustSpeed(groupName, group.ActiveDepthAdjustSpeed);
-            ConfiguredDiveProfile configuredDiveProfile = new(groupName, passiveProfile, activeDepthAdjustSpeed);
+            float shallowWaterFleeDepth = NormalizeShallowWaterFleeDepth(groupName, group.ShallowWaterFleeDepth);
+            bool preserveSpawnDepth = group.PreserveSpawnDepth ?? DefaultPreserveSpawnDepth;
+            ConfiguredDiveProfile configuredDiveProfile = new(groupName, passiveProfile, activeMinDepth, activeDepthAdjustSpeed, shallowWaterFleeDepth, preserveSpawnDepth);
             AddYamlGroupEntries(configuredProfilesByPrefabName, group.Prefabs, configuredDiveProfile);
         }
 
@@ -225,12 +237,31 @@ public partial class ServerSyncModTemplatePlugin
         }
 
         _configuredDiveProfilesByPrefabName = configuredProfilesByPrefabName;
+        _lastAppliedMonsterDiveYamlText = yamlText;
 
         int restoredMonsterCount = RestoreRemovedMonsterDiveFlags();
         ClearRuntimeCaches();
         ServerSyncModTemplateLogger.LogInfo(
-            $"Loaded monster dive YAML ({reason}). passiveGroups={definedGroups.Count}, prefabs={configuredProfilesByPrefabName.Count}, active[min={ActiveSwimDepthMin:F2}, max={ActiveSwimDepthMax:F2}, defaultAdjust={SwimDepthAdjustSpeed:F2}], restoredRemovedInstances={restoredMonsterCount}.");
+            $"Loaded monster dive YAML ({reason}). passiveGroups={definedGroups.Count}, prefabs={configuredProfilesByPrefabName.Count}, active[defaultMin={DefaultActiveSwimDepthMin:F2}, max={ActiveSwimDepthMax:F2}, defaultAdjust={SwimDepthAdjustSpeed:F2}], shallowFleeDefault={DefaultShallowWaterFleeDepth:F2}, preserveSpawnDefault={DefaultPreserveSpawnDepth}, restoredRemovedInstances={restoredMonsterCount}.");
         return true;
+    }
+
+    private static float NormalizeActiveMinDepth(string groupName, float? activeMinDepth)
+    {
+        if (!activeMinDepth.HasValue)
+        {
+            return DefaultActiveSwimDepthMin;
+        }
+
+        float requestedMinDepth = activeMinDepth.Value;
+        float normalizedMinDepth = Mathf.Clamp(requestedMinDepth, 0f, ActiveSwimDepthMax);
+        if (!Mathf.Approximately(requestedMinDepth, normalizedMinDepth))
+        {
+            ServerSyncModTemplateLogger.LogWarning(
+                $"Monster dive YAML normalized active profile '{groupName}': active_min_depth {requestedMinDepth.ToString("0.###", CultureInfo.InvariantCulture)} -> {normalizedMinDepth.ToString("0.###", CultureInfo.InvariantCulture)}.");
+        }
+
+        return normalizedMinDepth;
     }
 
     private static float NormalizeActiveDepthAdjustSpeed(string groupName, float? activeDepthAdjustSpeed)
@@ -249,6 +280,24 @@ public partial class ServerSyncModTemplatePlugin
         }
 
         return normalizedAdjustSpeed;
+    }
+
+    private static float NormalizeShallowWaterFleeDepth(string groupName, float? shallowWaterFleeDepth)
+    {
+        if (!shallowWaterFleeDepth.HasValue)
+        {
+            return DefaultShallowWaterFleeDepth;
+        }
+
+        float requestedFleeDepth = shallowWaterFleeDepth.Value;
+        float normalizedFleeDepth = Mathf.Clamp(requestedFleeDepth, 0f, ActiveSwimDepthMax);
+        if (!Mathf.Approximately(requestedFleeDepth, normalizedFleeDepth))
+        {
+            ServerSyncModTemplateLogger.LogWarning(
+                $"Monster dive YAML normalized active profile '{groupName}': shallow_water_flee_depth {requestedFleeDepth.ToString("0.###", CultureInfo.InvariantCulture)} -> {normalizedFleeDepth.ToString("0.###", CultureInfo.InvariantCulture)}.");
+        }
+
+        return normalizedFleeDepth;
     }
 
     private static PassiveDepthProfile NormalizePassiveDepthProfile(string groupName, float minDepth, float centerDepth, float maxDepth)
@@ -413,13 +462,19 @@ public partial class ServerSyncModTemplatePlugin
         string minDepthComment = includeFieldComments ? " # Shallowest passive dive depth used while the monster has no target and is not alerted." : string.Empty;
         string centerDepthComment = includeFieldComments ? " # Center depth used by the passive sine-wave swimming pattern." : string.Empty;
         string maxDepthComment = includeFieldComments ? " # Deepest passive dive depth used while the monster has no target and is not alerted." : string.Empty;
+        string activeMinDepthComment = includeFieldComments ? " # Shallowest active target depth used while alerted or chasing a target." : string.Empty;
         string activeAdjustComment = includeFieldComments ? " # How quickly this group adjusts swim depth while alerted or chasing a target." : string.Empty;
+        string shallowFleeComment = includeFieldComments ? " # Current terrain water depth below this value makes the monster flee from its target. 0 disables it." : string.Empty;
+        string preserveSpawnComment = includeFieldComments ? " # If true, monsters spawned underwater keep their initial spawn depth instead of surfacing first." : string.Empty;
         string prefabsComment = includeFieldComments ? " # Monster prefab names assigned to this passive profile group." : string.Empty;
         builder.AppendLine($"{groupName}:{groupHeaderComment}");
         builder.AppendLine($"  passive_min_depth: {FormatYamlFloat(minDepth)}{minDepthComment}");
         builder.AppendLine($"  passive_center_depth: {FormatYamlFloat(centerDepth)}{centerDepthComment}");
         builder.AppendLine($"  passive_max_depth: {FormatYamlFloat(maxDepth)}{maxDepthComment}");
+        builder.AppendLine($"  active_min_depth: {FormatYamlFloat(DefaultActiveSwimDepthMin)}{activeMinDepthComment}");
         builder.AppendLine($"  active_depth_adjust_speed: {FormatYamlFloat(activeDepthAdjustSpeed)}{activeAdjustComment}");
+        builder.AppendLine($"  shallow_water_flee_depth: {FormatYamlFloat(DefaultShallowWaterFleeDepth)}{shallowFleeComment}");
+        builder.AppendLine($"  preserve_spawn_depth: {FormatYamlBool(DefaultPreserveSpawnDepth)}{preserveSpawnComment}");
         if (examplePrefabs != null)
         {
             string[] prefabArray = examplePrefabs.Where(static prefab => !string.IsNullOrWhiteSpace(prefab)).ToArray();
@@ -441,5 +496,10 @@ public partial class ServerSyncModTemplatePlugin
     private static string FormatYamlFloat(float value)
     {
         return value.ToString("0.###", CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatYamlBool(bool value)
+    {
+        return value ? "true" : "false";
     }
 }

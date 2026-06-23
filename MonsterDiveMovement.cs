@@ -6,7 +6,8 @@ namespace ServerSyncModTemplate;
 public partial class ServerSyncModTemplatePlugin
 {
     private const float PassiveWavePeriodSeconds = 12f;
-    private const float ActiveSwimDepthMin = 0.25f;
+    private const float DefaultActiveSwimDepthMin = 0.25f;
+    private const float DefaultShallowWaterFleeDepth = 0f;
     private const float ActiveSwimDepthMax = 300f;
     private const float SwimDepthAdjustSpeed = 2f;
     private const float MovePlanCacheSeconds = 0.1f;
@@ -94,9 +95,15 @@ public partial class ServerSyncModTemplatePlugin
             : profile.CenterDepth + wave * surfaceAmplitude;
     }
 
+    private static float GetActiveSwimDepthMin(ConfiguredDiveProfile profile)
+    {
+        return Mathf.Clamp(profile.ActiveMinDepth, 0f, ActiveSwimDepthMax);
+    }
+
     private static SwimDepthGoal CalculateSwimDepthGoal(MonsterAI monsterAI, Character character, Vector3 point)
     {
         TryGetConfiguredDiveProfile(monsterAI, out ConfiguredDiveProfile configuredDiveProfile);
+        float activeSwimDepthMin = GetActiveSwimDepthMin(configuredDiveProfile);
         float liquidLevel = character.GetLiquidLevel();
         bool passiveDive = IsPassiveDiveState(monsterAI);
         float desiredDepth;
@@ -111,13 +118,13 @@ public partial class ServerSyncModTemplatePlugin
         else
         {
             float requestedDepth = liquidLevel - point.y;
-            desiredDepth = Mathf.Clamp(requestedDepth, ActiveSwimDepthMin, ActiveSwimDepthMax);
-            requestedOutsideRange = requestedDepth < ActiveSwimDepthMin || requestedDepth > ActiveSwimDepthMax;
+            desiredDepth = Mathf.Clamp(requestedDepth, activeSwimDepthMin, ActiveSwimDepthMax);
+            requestedOutsideRange = requestedDepth < activeSwimDepthMin || requestedDepth > ActiveSwimDepthMax;
             adjustSpeed = configuredDiveProfile.ActiveDepthAdjustSpeed;
         }
 
         float unclampedBottomDepth = desiredDepth;
-        desiredDepth = ClampSwimDepthForBottomContact(character, desiredDepth);
+        desiredDepth = ClampSwimDepthForBottomContact(character, desiredDepth, activeSwimDepthMin);
         requestedOutsideRange |= desiredDepth < unclampedBottomDepth - 0.001f;
 
         float clampedTargetY = liquidLevel - desiredDepth;
@@ -136,9 +143,9 @@ public partial class ServerSyncModTemplatePlugin
         character.m_swimDepth = Mathf.MoveTowards(character.m_swimDepth, goal.DesiredDepth, step);
     }
 
-    private static float ClampSwimDepthForBottomContact(Character character, float desiredDepth)
+    private static float ClampSwimDepthForBottomContact(Character character, float desiredDepth, float minimumDepth)
     {
-        return UnderwaterDepthUtils.ClampDepthAboveBottom(character, desiredDepth, ActiveSwimDepthMin);
+        return UnderwaterDepthUtils.ClampDepthAboveBottom(character, desiredDepth, minimumDepth);
     }
 
     private static UnderwaterNavigationPlan BuildUnderwaterNavigationPlan(BaseAI ai, Character character, Vector3 targetPoint)

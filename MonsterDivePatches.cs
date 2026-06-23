@@ -22,14 +22,21 @@ public partial class ServerSyncModTemplatePlugin
     [HarmonyPatch(typeof(MonsterAI), nameof(MonsterAI.UpdateAI))]
     private static class MonsterAIUpdateAIPatch
     {
-        private static void Prefix(MonsterAI __instance)
+        private static bool Prefix(MonsterAI __instance, float dt, ref bool __result)
         {
             if (!IsConfiguredMonster(__instance))
             {
-                return;
+                return true;
             }
 
             EnsureDiveFlags(__instance);
+            if (!TryFleeFromShallowWater(__instance, dt))
+            {
+                return true;
+            }
+
+            __result = true;
+            return false;
         }
     }
 
