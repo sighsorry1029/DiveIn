@@ -8,7 +8,7 @@ namespace ServerSyncModTemplate;
 public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
 {
     internal const string ModName = "DiveIn";
-    internal const string ModVersion = "1.1.2";
+    internal const string ModVersion = "1.1.3";
     internal const string Author = "sighsorry";
     private const string ModGUID = $"{Author}.{ModName}";
 }

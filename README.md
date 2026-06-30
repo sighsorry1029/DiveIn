@@ -21,7 +21,7 @@ Recommend to use with RtDOcean. There is configured sample for it.
 - Unlike vanilla Valheim, stamina regeneration while swimming can be enabled separately for surface swimming and midwater diving.
 - Idle stamina drain while your head is underwater can scale by current liquid depth to represent holding your breath.
 - Extra stamina drain scales linearly per 1m of current liquid depth and stacks multiplicatively with Fast Swim.
-- Pressing the vanilla run key in water toggles Fast Swim, doubling overall swim speed by default and consuming configurable extra stamina. Swim skill still improves base swim speed by a configurable amount.
+- The vanilla run key can either toggle Fast Swim or keep it active only while held, doubling overall swim speed by default and consuming configurable extra stamina. Swim skill still improves base swim speed by a configurable amount.
 - Swimming key hint labels are localized for supported Valheim languages.
 - Surface swimming keeps the player's vanilla swim depth and only changes depth while diving.
 - Attacking, secondary attacking, and guarding underwater stop swim movement so combat input takes priority.
@@ -125,6 +125,12 @@ Dive Ascend Key = Space
 # Default value: LeftControl
 Dive Descend Key = LeftControl
 
+## Client-side input behavior for Fast Swim. Press keeps Fast Swim active only while the vanilla run key is held. Toggle switches Fast Swim on or off whenever the vanilla run key is pressed. [Not Synced with Server]
+# Setting type: FastSwimInputMode
+# Default value: Toggle
+# Acceptable values: Press, Toggle
+Fast Swim Input Mode = Toggle
+
 ## Comma-separated item prefab names that remain restricted in water. Everything not listed is allowed in water by default. Example: BowFineWood,ShieldBronzeBuckler. [Synced with Server]
 # Setting type: String
 # Default value:
@@ -201,13 +207,13 @@ Swim Stamina Drain Base Multiplier = 1
 # Acceptable value range: From 1 to 3
 Swim Skill Speed Multiplier = 1.5
 
-## Swim speed multiplier while Fast Swim is toggled on with the vanilla run key. Swim skill separately increases base swim speed. [Synced with Server]
+## Swim speed multiplier while Fast Swim is enabled with the vanilla run key. Swim skill separately increases base swim speed. [Synced with Server]
 # Setting type: Single
 # Default value: 2
 # Acceptable value range: From 1 to 3
 Fast Swim Speed Multiplier = 2
 
-## Moving swim stamina drain multiplier while Fast Swim is toggled on. Applied multiplicatively with base and depth stamina drain. [Synced with Server]
+## Moving swim stamina drain multiplier while Fast Swim is enabled. Applied multiplicatively with base and depth stamina drain. [Synced with Server]
 # Setting type: Single
 # Default value: 2
 # Acceptable value range: From 1 to 5

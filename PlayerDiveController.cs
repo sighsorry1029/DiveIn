@@ -188,11 +188,17 @@ internal sealed class PlayerDiveController : MonoBehaviour
         return ServerSyncModTemplatePlugin.IsSwimRunEnabled() && _fastSwimEnabled;
     }
 
-    internal void UpdateFastSwimToggle()
+    internal void UpdateFastSwimInput()
     {
         if (!ShouldShowDiveKeyHints() || !ServerSyncModTemplatePlugin.IsSwimRunEnabled())
         {
             _fastSwimEnabled = false;
+            return;
+        }
+
+        if (!ServerSyncModTemplatePlugin.UseFastSwimToggleInput())
+        {
+            _fastSwimEnabled = ZInput.GetButton("Run") || ZInput.GetButton("JoyRun");
             return;
         }
 

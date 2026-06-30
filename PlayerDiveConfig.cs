@@ -8,6 +8,12 @@ namespace ServerSyncModTemplate;
 
 public partial class ServerSyncModTemplatePlugin
 {
+    public enum FastSwimInputMode
+    {
+        Press,
+        Toggle
+    }
+
     internal const float DefaultUnderwaterDarknessFactor = 0.5f;
     internal const float DefaultUnderwaterVisibilityFalloff = 0.25f;
     internal const float DefaultUnderwaterCameraMinWaterDistance = -5000f;
@@ -24,6 +30,7 @@ public partial class ServerSyncModTemplatePlugin
     internal static ConfigEntry<float> _playerSwimSkillSpeedMultiplier = null!;
     internal static ConfigEntry<float> _fastSwimSpeedMultiplier = null!;
     internal static ConfigEntry<float> _fastSwimStaminaDrainMultiplier = null!;
+    internal static ConfigEntry<FastSwimInputMode> _fastSwimInputMode = null!;
     internal static ConfigEntry<float> _playerProjectileUnderwaterTtlMultiplier = null!;
     internal static ConfigEntry<float> _playerProjectileUnderwaterSpeedMultiplier = null!;
     internal static ConfigEntry<float> _playerProjectileUnderwaterDamageMultiplier = null!;
@@ -115,7 +122,7 @@ public partial class ServerSyncModTemplatePlugin
             "Fast Swim Speed Multiplier",
             2f,
             new ConfigDescription(
-                "Swim speed multiplier while Fast Swim is toggled on with the vanilla run key. 1 disables Fast Swim and hides its key hint. Swim skill separately increases base swim speed.",
+                "Swim speed multiplier while Fast Swim is enabled with the vanilla run key. 1 disables Fast Swim and hides its key hint. Swim skill separately increases base swim speed.",
                 new AcceptableValueRange<float>(1f, 3f),
                 new ConfigurationManagerAttributes { Order = 109 }));
         _fastSwimStaminaDrainMultiplier = config(
@@ -123,7 +130,7 @@ public partial class ServerSyncModTemplatePlugin
             "Fast Swim Stamina Drain Multiplier",
             2f,
             new ConfigDescription(
-                "Moving swim stamina drain multiplier while Fast Swim is toggled on. Applied multiplicatively with base and depth stamina drain.",
+                "Moving swim stamina drain multiplier while Fast Swim is enabled. Applied multiplicatively with base and depth stamina drain.",
                 new AcceptableValueRange<float>(1f, 5f),
                 new ConfigurationManagerAttributes { Order = 108 }));
         _playerSwimSkillSpeedMultiplier = config(
@@ -176,6 +183,15 @@ public partial class ServerSyncModTemplatePlugin
                 new AcceptableShortcuts(),
                 new ConfigurationManagerAttributes { Order = 109 }),
             synchronizedSetting: false);
+        _fastSwimInputMode = config(
+            "2 - Player Diving",
+            "Fast Swim Input Mode",
+            FastSwimInputMode.Toggle,
+            new ConfigDescription(
+                "Client-side input behavior for Fast Swim. Press keeps Fast Swim active only while the vanilla run key is held. Toggle switches Fast Swim on or off whenever the vanilla run key is pressed.",
+                null,
+                new ConfigurationManagerAttributes { Order = 108 }),
+            synchronizedSetting: false);
         _underwaterDarknessFactor = config(
             "2 - Player Diving",
             "Darkness Factor",
@@ -219,6 +235,11 @@ public partial class ServerSyncModTemplatePlugin
     internal static bool IsSwimRunEnabled()
     {
         return _fastSwimSpeedMultiplier != null && _fastSwimSpeedMultiplier.Value > 1.001f;
+    }
+
+    internal static bool UseFastSwimToggleInput()
+    {
+        return _fastSwimInputMode?.Value != FastSwimInputMode.Press;
     }
 
     internal static bool UseMultiplicativeSwimStaminaModifiers()

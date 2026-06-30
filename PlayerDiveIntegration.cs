@@ -81,7 +81,7 @@ internal static class PlayerDivePatches
 
         diver.ResetSwimDepthIfNotInWater();
         diver.RefreshUnderwaterMovementState();
-        diver.UpdateFastSwimToggle();
+        diver.UpdateFastSwimInput();
         if (diver.ShouldForceSwimming())
         {
             diver.PrepareForcedSwimming();
