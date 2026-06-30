@@ -1,5 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -7,9 +6,11 @@ namespace ServerSyncModTemplate;
 
 internal static class UnderwaterSurfaceRenderer
 {
+    private const int StaleSurfaceResetFrameDelay = 5;
     private static readonly int DepthPropertyId = Shader.PropertyToID("_depth");
     private static readonly int UseGlobalWindPropertyId = Shader.PropertyToID("_UseGlobalWind");
     private static readonly Dictionary<int, UnderwaterSurfaceState> SurfaceStates = new();
+    private static readonly List<int> SurfaceIdsToReset = new();
 
     internal static void Apply(WaterVolume volume, float waterLevel)
     {
@@ -33,7 +34,7 @@ internal static class UnderwaterSurfaceRenderer
         }
 
         state.Apply(waterLevel);
-        ApplyWaterMaterialOverride(state);
+        ApplyWaterMaterialProperties(state);
     }
 
     internal static void Reset(WaterVolume? volume)
@@ -59,17 +60,59 @@ internal static class UnderwaterSurfaceRenderer
             return;
         }
 
-        List<int> volumeIds = SurfaceStates.Keys.ToList();
-        foreach (int volumeId in volumeIds)
+        SurfaceIdsToReset.Clear();
+        foreach (int volumeId in SurfaceStates.Keys)
         {
-            SurfaceStates[volumeId].Restore();
-            SurfaceStates.Remove(volumeId);
+            SurfaceIdsToReset.Add(volumeId);
         }
+
+        foreach (int volumeId in SurfaceIdsToReset)
+        {
+            RestoreAndRemove(volumeId);
+        }
+
+        SurfaceIdsToReset.Clear();
     }
 
-    private static void ApplyWaterMaterialOverride(UnderwaterSurfaceState state)
+    internal static void ResetStale()
     {
-        Material? material = state.OverrideMaterial;
+        if (SurfaceStates.Count == 0)
+        {
+            return;
+        }
+
+        int currentFrame = Time.frameCount;
+        SurfaceIdsToReset.Clear();
+        foreach (KeyValuePair<int, UnderwaterSurfaceState> entry in SurfaceStates)
+        {
+            if (entry.Value.ShouldResetAsStale(currentFrame, StaleSurfaceResetFrameDelay))
+            {
+                SurfaceIdsToReset.Add(entry.Key);
+            }
+        }
+
+        foreach (int volumeId in SurfaceIdsToReset)
+        {
+            RestoreAndRemove(volumeId);
+        }
+
+        SurfaceIdsToReset.Clear();
+    }
+
+    private static void RestoreAndRemove(int volumeId)
+    {
+        if (!SurfaceStates.TryGetValue(volumeId, out UnderwaterSurfaceState? state))
+        {
+            return;
+        }
+
+        state.Restore();
+        SurfaceStates.Remove(volumeId);
+    }
+
+    private static void ApplyWaterMaterialProperties(UnderwaterSurfaceState state)
+    {
+        Material? material = state.GetWaterMaterial();
         if (material == null)
         {
             return;
@@ -103,18 +146,15 @@ internal static class UnderwaterSurfaceRenderer
             OriginalPosition = SurfaceTransform.position;
             OriginalRotation = SurfaceTransform.rotation;
             OriginalShadowCastingMode = volume.m_waterSurface.shadowCastingMode;
-            OriginalMaterial = Renderer != null ? Renderer.sharedMaterial : null;
-            OverrideMaterial = OriginalMaterial != null ? Object.Instantiate(OriginalMaterial) : null;
         }
 
         public WaterVolume Volume { get; }
         public Transform SurfaceTransform { get; }
         public MeshRenderer? Renderer { get; }
-        public Material? OriginalMaterial { get; }
-        public Material? OverrideMaterial { get; private set; }
         public Vector3 OriginalPosition { get; }
         public Quaternion OriginalRotation { get; }
         public ShadowCastingMode OriginalShadowCastingMode { get; }
+        public int LastAppliedFrame { get; private set; } = Time.frameCount;
         private readonly float[] _forcedDepth = new float[4];
 
         public bool CanRender()
@@ -122,9 +162,7 @@ internal static class UnderwaterSurfaceRenderer
             return Volume != null
                    && Volume.m_waterSurface != null
                    && SurfaceTransform != null
-                   && Renderer != null
-                   && OriginalMaterial != null
-                   && OverrideMaterial != null;
+                   && Renderer != null;
         }
 
         public void Apply(float waterLevel)
@@ -134,16 +172,12 @@ internal static class UnderwaterSurfaceRenderer
                 return;
             }
 
+            LastAppliedFrame = Time.frameCount;
             Vector3 position = SurfaceTransform.position;
             SurfaceTransform.SetPositionAndRotation(
                 new Vector3(position.x, waterLevel, position.z),
                 OriginalRotation * Quaternion.Euler(180f, 0f, 0f));
             Volume.m_waterSurface.shadowCastingMode = ShadowCastingMode.TwoSided;
-
-            if (Renderer!.sharedMaterial != OverrideMaterial)
-            {
-                Renderer.sharedMaterial = OverrideMaterial;
-            }
         }
 
         public void Restore()
@@ -160,17 +194,16 @@ internal static class UnderwaterSurfaceRenderer
             {
                 Volume.m_waterSurface.shadowCastingMode = OriginalShadowCastingMode;
             }
+        }
 
-            if (Renderer != null && OriginalMaterial != null)
-            {
-                Renderer.sharedMaterial = OriginalMaterial;
-            }
+        public bool ShouldResetAsStale(int currentFrame, int maxFrameAge)
+        {
+            return !CanRender() || currentFrame - LastAppliedFrame > maxFrameAge;
+        }
 
-            if (OverrideMaterial != null)
-            {
-                Object.Destroy(OverrideMaterial);
-                OverrideMaterial = null;
-            }
+        public Material? GetWaterMaterial()
+        {
+            return Renderer != null ? Renderer.material : null;
         }
 
         public float[] GetForcedDepthArray(float depth)

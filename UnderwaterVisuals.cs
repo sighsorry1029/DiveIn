@@ -162,6 +162,7 @@ internal static class UnderwaterCameraPatches
     {
         if (beforeCameraUpdate)
         {
+            UnderwaterSurfaceRenderer.ResetStale();
             if (mode == VisualMode.Disabled)
             {
                 UnderwaterVisualState.ResetAll();
