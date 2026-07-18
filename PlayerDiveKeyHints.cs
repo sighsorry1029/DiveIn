@@ -268,7 +268,7 @@ internal static class PlayerDiveKeyHints
             return;
         }
 
-        bool showFastSwimHint = ServerSyncModTemplatePlugin.IsSwimRunEnabled();
+        bool showFastSwimHint = diver.CanUseFastSwim();
         string runKey = showFastSwimHint ? ServerSyncModTemplatePlugin.GetDiveRunKeyHint() : string.Empty;
         string fastSwimLabel = DiveLocalization.Localize(diver.IsFastSwimEnabled()
             ? DiveLocalization.FastSwimOnKey

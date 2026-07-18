@@ -30,6 +30,7 @@ public partial class ServerSyncModTemplatePlugin
     internal static ConfigEntry<float> _playerSwimSkillSpeedMultiplier = null!;
     internal static ConfigEntry<float> _fastSwimSpeedMultiplier = null!;
     internal static ConfigEntry<float> _fastSwimStaminaDrainMultiplier = null!;
+    internal static ConfigEntry<float> _encumberedSwimSpeedMultiplier = null!;
     internal static ConfigEntry<FastSwimInputMode> _fastSwimInputMode = null!;
     internal static ConfigEntry<float> _playerProjectileUnderwaterTtlMultiplier = null!;
     internal static ConfigEntry<float> _playerProjectileUnderwaterSpeedMultiplier = null!;
@@ -141,6 +142,14 @@ public partial class ServerSyncModTemplatePlugin
                 "Base swim speed multiplier at Swim skill 100. 1.5 means +50%.",
                 new AcceptableValueRange<float>(1f, 3f),
                 new ConfigurationManagerAttributes { Order = 110 }));
+        _encumberedSwimSpeedMultiplier = config(
+            "5 - Swim Speed",
+            "Encumbered Swim Speed Multiplier",
+            0.5f,
+            new ConfigDescription(
+                "Swim speed multiplier while encumbered. Fast Swim is unavailable while encumbered. 1 keeps normal swim speed; 0.5 halves it.",
+                new AcceptableValueRange<float>(0.1f, 1f),
+                new ConfigurationManagerAttributes { Order = 107 }));
         _playerProjectileUnderwaterTtlMultiplier = config(
             "6 - Underwater Projectiles",
             "Player Projectile Underwater TTL Multiplier",

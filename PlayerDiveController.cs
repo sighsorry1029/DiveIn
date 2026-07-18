@@ -185,12 +185,17 @@ internal sealed class PlayerDiveController : MonoBehaviour
 
     internal bool IsFastSwimEnabled()
     {
-        return ServerSyncModTemplatePlugin.IsSwimRunEnabled() && _fastSwimEnabled;
+        return CanUseFastSwim() && _fastSwimEnabled;
+    }
+
+    internal bool CanUseFastSwim()
+    {
+        return ServerSyncModTemplatePlugin.IsSwimRunEnabled() && !Player.IsEncumbered();
     }
 
     internal void UpdateFastSwimInput()
     {
-        if (!ShouldShowDiveKeyHints() || !ServerSyncModTemplatePlugin.IsSwimRunEnabled())
+        if (!ShouldShowDiveKeyHints() || !CanUseFastSwim())
         {
             _fastSwimEnabled = false;
             return;
@@ -362,10 +367,11 @@ internal sealed class PlayerDiveController : MonoBehaviour
     {
         ResetSwimSpeedOverride();
         float skillSpeedMultiplier = GetSwimSkillSpeedMultiplier();
+        float encumberedSpeedMultiplier = GetEncumberedSwimSpeedMultiplier();
         float runSpeedMultiplier = GetSwimRunSpeedMultiplier();
         _activeSwimRunStaminaDrainMultiplier = GetSwimRunStaminaDrainMultiplier();
 
-        float speedMultiplier = skillSpeedMultiplier * runSpeedMultiplier;
+        float speedMultiplier = skillSpeedMultiplier * encumberedSpeedMultiplier * runSpeedMultiplier;
         if (Mathf.Approximately(speedMultiplier, 1f))
         {
             return;
@@ -394,6 +400,16 @@ internal sealed class PlayerDiveController : MonoBehaviour
         float swimSkillFactor = Player.m_skills.GetSkillFactor(Skills.SkillType.Swim);
         float maxSkillMultiplier = Mathf.Max(1f, ServerSyncModTemplatePlugin._playerSwimSkillSpeedMultiplier.Value);
         return Mathf.Lerp(1f, maxSkillMultiplier, swimSkillFactor);
+    }
+
+    private float GetEncumberedSwimSpeedMultiplier()
+    {
+        if (!Player.IsEncumbered())
+        {
+            return 1f;
+        }
+
+        return Mathf.Clamp(ServerSyncModTemplatePlugin._encumberedSwimSpeedMultiplier.Value, 0.1f, 1f);
     }
 
     private float GetSwimRunSpeedMultiplier()
