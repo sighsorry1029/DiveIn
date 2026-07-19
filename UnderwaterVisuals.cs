@@ -110,6 +110,8 @@ internal static class UnderwaterVisualState
 [HarmonyPatch]
 internal static class UnderwaterCameraPatches
 {
+    private const float UnderwaterCameraSurfaceClearance = 1f;
+
     private enum VisualMode
     {
         Disabled,
@@ -130,6 +132,50 @@ internal static class UnderwaterCameraPatches
     private static bool IsCameraUnderwater(Camera camera, PlayerDiveController diver)
     {
         return camera.transform.position.y < diver.Player.GetLiquidLevel();
+    }
+
+    private static void ClampSubmergedCameraBelowSurface(GameCamera gameCamera, PlayerDiveController? diver)
+    {
+        Camera? camera = gameCamera.m_camera;
+        if (diver == null
+            || camera == null
+            || diver.Player.m_eye == null
+            || !ShouldUseUnderwaterVisuals(diver)
+            || !ShouldAllowUnderwaterCamera(diver)
+            || !diver.IsHeadUnderwater())
+        {
+            return;
+        }
+
+        float waterLevel = diver.Player.GetLiquidLevel();
+        Vector3 eyePosition = diver.Player.m_eye.position;
+        float eyeDepth = waterLevel - eyePosition.y;
+        if (eyeDepth <= 0f)
+        {
+            return;
+        }
+
+        float clearance = Mathf.Min(
+            UnderwaterCameraSurfaceClearance,
+            eyeDepth * 0.5f);
+        float maximumCameraY = waterLevel - clearance;
+        Transform cameraTransform = camera.transform;
+        Vector3 cameraPosition = cameraTransform.position;
+        if (cameraPosition.y <= maximumCameraY)
+        {
+            return;
+        }
+
+        float verticalSpan = cameraPosition.y - eyePosition.y;
+        if (verticalSpan <= 0f)
+        {
+            return;
+        }
+
+        float distanceFraction = Mathf.Clamp01((maximumCameraY - eyePosition.y) / verticalSpan);
+        cameraTransform.position = Vector3.Lerp(eyePosition, cameraPosition, distanceFraction);
+        camera.nearClipPlane = Mathf.Min(camera.nearClipPlane, gameCamera.m_nearClipPlaneMin);
+        gameCamera.m_waterClipping = true;
     }
 
     private static VisualMode GetVisualMode(GameCamera? gameCamera, out PlayerDiveController? diver, out Camera? camera)
@@ -231,6 +277,7 @@ internal static class UnderwaterCameraPatches
     [HarmonyPatch(typeof(GameCamera), nameof(GameCamera.UpdateCamera))]
     private static void GameCameraUpdateCameraPostfix(GameCamera __instance)
     {
+        ClampSubmergedCameraBelowSurface(__instance, PlayerDiveUtils.EnsureLocalDiver());
         ApplyCameraVisualMode(
             __instance,
             GetVisualMode(__instance, out PlayerDiveController? diver, out _),
