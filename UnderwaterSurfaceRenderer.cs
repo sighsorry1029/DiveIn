@@ -12,7 +12,7 @@ internal static class UnderwaterSurfaceRenderer
     private static readonly Dictionary<int, UnderwaterSurfaceState> SurfaceStates = new();
     private static readonly List<int> SurfaceIdsToReset = new();
 
-    internal static void Apply(WaterVolume volume, float waterLevel)
+    internal static void Apply(WaterVolume volume)
     {
         if (volume.m_waterSurface == null)
         {
@@ -33,7 +33,7 @@ internal static class UnderwaterSurfaceRenderer
             return;
         }
 
-        state.Apply(waterLevel);
+        state.Apply();
         ApplyWaterMaterialProperties(state);
     }
 
@@ -122,11 +122,11 @@ internal static class UnderwaterSurfaceRenderer
         {
             if (state.Volume.m_forceDepth >= 0f)
             {
-                material.SetFloatArray(DepthPropertyId, state.GetForcedDepthArray(state.Volume.m_forceDepth));
+                material.SetFloatArray(DepthPropertyId, state.GetUniformDepthArray(state.Volume.m_forceDepth));
             }
             else
             {
-                material.SetFloatArray(DepthPropertyId, state.Volume.m_normalizedDepth);
+                material.SetFloatArray(DepthPropertyId, state.GetFlippedDepthArray(state.Volume.m_normalizedDepth));
             }
         }
 
@@ -155,7 +155,7 @@ internal static class UnderwaterSurfaceRenderer
         public Quaternion OriginalRotation { get; }
         public ShadowCastingMode OriginalShadowCastingMode { get; }
         public int LastAppliedFrame { get; private set; } = Time.frameCount;
-        private readonly float[] _forcedDepth = new float[4];
+        private readonly float[] _underwaterDepth = new float[4];
 
         public bool CanRender()
         {
@@ -165,7 +165,7 @@ internal static class UnderwaterSurfaceRenderer
                    && Renderer != null;
         }
 
-        public void Apply(float waterLevel)
+        public void Apply()
         {
             if (!CanRender())
             {
@@ -175,7 +175,7 @@ internal static class UnderwaterSurfaceRenderer
             LastAppliedFrame = Time.frameCount;
             Vector3 position = SurfaceTransform.position;
             SurfaceTransform.SetPositionAndRotation(
-                new Vector3(position.x, waterLevel, position.z),
+                new Vector3(position.x, OriginalPosition.y, position.z),
                 OriginalRotation * Quaternion.Euler(180f, 0f, 0f));
             Volume.m_waterSurface.shadowCastingMode = ShadowCastingMode.TwoSided;
         }
@@ -194,6 +194,8 @@ internal static class UnderwaterSurfaceRenderer
             {
                 Volume.m_waterSurface.shadowCastingMode = OriginalShadowCastingMode;
             }
+
+            RestoreWaterMaterialProperties(this);
         }
 
         public bool ShouldResetAsStale(int currentFrame, int maxFrameAge)
@@ -206,13 +208,39 @@ internal static class UnderwaterSurfaceRenderer
             return Renderer != null ? Renderer.material : null;
         }
 
-        public float[] GetForcedDepthArray(float depth)
+        public float[] GetUniformDepthArray(float depth)
         {
-            _forcedDepth[0] = depth;
-            _forcedDepth[1] = depth;
-            _forcedDepth[2] = depth;
-            _forcedDepth[3] = depth;
-            return _forcedDepth;
+            _underwaterDepth[0] = depth;
+            _underwaterDepth[1] = depth;
+            _underwaterDepth[2] = depth;
+            _underwaterDepth[3] = depth;
+            return _underwaterDepth;
         }
+
+        public float[] GetFlippedDepthArray(float[] depth)
+        {
+            _underwaterDepth[0] = depth[3];
+            _underwaterDepth[1] = depth[2];
+            _underwaterDepth[2] = depth[1];
+            _underwaterDepth[3] = depth[0];
+            return _underwaterDepth;
+        }
+    }
+
+    private static void RestoreWaterMaterialProperties(UnderwaterSurfaceState state)
+    {
+        Material? material = state.GetWaterMaterial();
+        if (material == null || !material.HasProperty(DepthPropertyId))
+        {
+            return;
+        }
+
+        if (state.Volume.m_forceDepth >= 0f)
+        {
+            material.SetFloatArray(DepthPropertyId, state.GetUniformDepthArray(state.Volume.m_forceDepth));
+            return;
+        }
+
+        material.SetFloatArray(DepthPropertyId, state.Volume.m_normalizedDepth);
     }
 }

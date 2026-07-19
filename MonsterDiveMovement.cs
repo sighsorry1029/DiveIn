@@ -10,27 +10,26 @@ public partial class ServerSyncModTemplatePlugin
     private const float DefaultShallowWaterFleeDepth = 0f;
     private const float ActiveSwimDepthMax = 300f;
     private const float SwimDepthAdjustSpeed = 2f;
-    private const float MovePlanCacheSeconds = 0.1f;
-    private const float MovePlanCacheCellSize = 0.1f;
+    private const float SteeringMemorySeconds = 0.1f;
+    private const float SteeringMemoryDistance = 1f;
+    private const float PreferredSteerAngleMax = 70f;
     private const int AvoidanceSampleCount = 8;
     private static readonly float[] SteerAngles = { 0f, -35f, 35f, -70f, 70f, -120f, 120f, 180f };
-    private static readonly Dictionary<int, MovePlanCacheEntry> MovePlanCache = new();
+    private static readonly Dictionary<int, SteeringMemoryEntry> SteeringMemory = new();
 
-    private readonly struct MovePlanCacheEntry
+    private readonly struct SteeringMemoryEntry
     {
         public readonly float Time;
-        public readonly Vector3Int PositionBucket;
-        public readonly Vector3Int TargetBucket;
-        public readonly bool HasRoute;
-        public readonly Vector3 Direction;
+        public readonly Vector3 Position;
+        public readonly Vector3 Target;
+        public readonly float Side;
 
-        public MovePlanCacheEntry(float time, Vector3Int positionBucket, Vector3Int targetBucket, bool hasRoute, Vector3 direction)
+        public SteeringMemoryEntry(float time, Vector3 position, Vector3 target, float side)
         {
             Time = time;
-            PositionBucket = positionBucket;
-            TargetBucket = targetBucket;
-            HasRoute = hasRoute;
-            Direction = direction;
+            Position = position;
+            Target = target;
+            Side = side;
         }
     }
 
@@ -62,24 +61,23 @@ public partial class ServerSyncModTemplatePlugin
         }
     }
 
-    private static Vector3Int ToCacheBucket(Vector3 value)
+    private static bool IsWithinSteeringMemoryRange(Vector3 a, Vector3 b)
     {
-        return new Vector3Int(
-            Mathf.RoundToInt(value.x / MovePlanCacheCellSize),
-            Mathf.RoundToInt(value.y / MovePlanCacheCellSize),
-            Mathf.RoundToInt(value.z / MovePlanCacheCellSize));
+        float x = a.x - b.x;
+        float z = a.z - b.z;
+        return x * x + z * z <= SteeringMemoryDistance * SteeringMemoryDistance;
     }
 
     private static void ClearRuntimeCaches()
     {
-        MovePlanCache.Clear();
+        SteeringMemory.Clear();
     }
 
     private static void TrimCachesIfNeeded()
     {
-        if (MovePlanCache.Count > MaxCacheEntries)
+        if (SteeringMemory.Count > MaxCacheEntries)
         {
-            MovePlanCache.Clear();
+            SteeringMemory.Clear();
         }
     }
 
@@ -151,32 +149,70 @@ public partial class ServerSyncModTemplatePlugin
     private static UnderwaterNavigationPlan BuildUnderwaterNavigationPlan(BaseAI ai, Character character, Vector3 targetPoint)
     {
         int instanceId = ai.GetInstanceID();
-        Vector3Int currentPosBucket = ToCacheBucket(ai.transform.position);
-        Vector3Int targetBucket = ToCacheBucket(targetPoint);
-        float now = Time.time;
-
-        if (MovePlanCache.TryGetValue(instanceId, out MovePlanCacheEntry cachedPlan) &&
-            now - cachedPlan.Time <= MovePlanCacheSeconds &&
-            cachedPlan.PositionBucket == currentPosBucket &&
-            cachedPlan.TargetBucket == targetBucket)
+        Vector3 currentPosition = ai.transform.position;
+        if (ai is MonsterAI configuredMonster &&
+            TryGetConfiguredDiveProfile(configuredMonster, out ConfiguredDiveProfile profile) &&
+            !profile.AvoidanceSteering)
         {
-            return new UnderwaterNavigationPlan(cachedPlan.HasRoute, cachedPlan.Direction);
+            SteeringMemory.Remove(instanceId);
+            Vector3 directDirection = targetPoint - currentPosition;
+            return new UnderwaterNavigationPlan(
+                hasRoute: true,
+                directDirection.sqrMagnitude > 0.0001f ? directDirection.normalized : Vector3.zero);
         }
 
-        UnderwaterNavigationPlan navigationPlan = CalculateUnderwaterNavigationPlan(ai, character, targetPoint);
-        TrimCachesIfNeeded();
-        MovePlanCache[instanceId] = new MovePlanCacheEntry(
-            now,
-            currentPosBucket,
-            targetBucket,
-            navigationPlan.HasRoute,
-            navigationPlan.Direction);
+        float now = Time.time;
+        float preferredSide = 0f;
+        bool allowSteeringMemory = !(ai is MonsterAI monsterAI && monsterAI.m_serpentMovement);
+        if (allowSteeringMemory &&
+            SteeringMemory.TryGetValue(instanceId, out SteeringMemoryEntry memory))
+        {
+            bool memoryValid = now - memory.Time <= SteeringMemorySeconds &&
+                               IsWithinSteeringMemoryRange(currentPosition, memory.Position) &&
+                               IsWithinSteeringMemoryRange(targetPoint, memory.Target);
+            if (memoryValid)
+            {
+                preferredSide = memory.Side;
+            }
+            else
+            {
+                SteeringMemory.Remove(instanceId);
+            }
+        }
+
+        UnderwaterNavigationPlan navigationPlan = CalculateUnderwaterNavigationPlan(
+            ai,
+            character,
+            targetPoint,
+            preferredSide,
+            out float selectedAngle);
+
+        float selectedSide = navigationPlan.HasRoute &&
+                             Mathf.Abs(selectedAngle) > 0.1f &&
+                             Mathf.Abs(selectedAngle) <= PreferredSteerAngleMax
+            ? Mathf.Sign(selectedAngle)
+            : 0f;
+        if (allowSteeringMemory && selectedSide != 0f)
+        {
+            TrimCachesIfNeeded();
+            SteeringMemory[instanceId] = new SteeringMemoryEntry(
+                now,
+                currentPosition,
+                targetPoint,
+                selectedSide);
+        }
 
         return navigationPlan;
     }
 
-    private static UnderwaterNavigationPlan CalculateUnderwaterNavigationPlan(BaseAI ai, Character character, Vector3 targetPoint)
+    private static UnderwaterNavigationPlan CalculateUnderwaterNavigationPlan(
+        BaseAI ai,
+        Character character,
+        Vector3 targetPoint,
+        float preferredSide,
+        out float selectedAngle)
     {
+        selectedAngle = 0f;
         Vector3 desiredDir = targetPoint - ai.transform.position;
         if (desiredDir.sqrMagnitude <= 0.0001f)
         {
@@ -206,35 +242,130 @@ public partial class ServerSyncModTemplatePlugin
         bool bestHasRoute = false;
         float bestScore = float.NegativeInfinity;
 
-        for (int i = 0; i < sampleCount; ++i)
+        if (EvaluateSteerCandidate(
+                ai,
+                center,
+                horizontal,
+                SteerAngles[0],
+                radius,
+                checkDistance,
+                ref bestHorizontal,
+                ref bestHasRoute,
+                ref bestScore,
+                ref selectedAngle,
+                out _))
         {
-            float angle = SteerAngles[i];
-            Vector3 candidate = Quaternion.Euler(0f, angle, 0f) * horizontal;
-            bool clear = ai.CanMove(candidate, radius, checkDistance);
-            float score;
-            bool candidateHasRoute;
-            if (clear)
-            {
-                score = 1000f - Mathf.Abs(angle);
-                candidateHasRoute = true;
-            }
-            else
-            {
-                float freeDistance = ai.Raycast(center, candidate, checkDistance * 2f, 0.1f);
-                score = freeDistance - Mathf.Abs(angle) * 0.01f;
-                candidateHasRoute = freeDistance >= checkDistance * 0.9f;
-            }
+            return new UnderwaterNavigationPlan(hasRoute: true, desiredDir);
+        }
 
-            if (score > bestScore)
+        bool foundClearRoute = false;
+        if (preferredSide != 0f)
+        {
+            for (int i = 1; i < sampleCount; ++i)
             {
-                bestScore = score;
+                float angle = SteerAngles[i];
+                if (!IsPreferredSteerAngle(angle, preferredSide))
+                {
+                    continue;
+                }
+
+                if (!EvaluateSteerCandidate(
+                        ai,
+                        center,
+                        horizontal,
+                        angle,
+                        radius,
+                        checkDistance,
+                        ref bestHorizontal,
+                        ref bestHasRoute,
+                        ref bestScore,
+                        ref selectedAngle,
+                        out Vector3 candidate))
+                {
+                    continue;
+                }
+
                 bestHorizontal = candidate;
-                bestHasRoute = candidateHasRoute;
+                bestHasRoute = true;
+                selectedAngle = angle;
+                foundClearRoute = true;
+                break;
+            }
+        }
+
+        if (!foundClearRoute)
+        {
+            for (int i = 1; i < sampleCount; ++i)
+            {
+                float angle = SteerAngles[i];
+                if (preferredSide != 0f && IsPreferredSteerAngle(angle, preferredSide))
+                {
+                    continue;
+                }
+
+                if (!EvaluateSteerCandidate(
+                        ai,
+                        center,
+                        horizontal,
+                        angle,
+                        radius,
+                        checkDistance,
+                        ref bestHorizontal,
+                        ref bestHasRoute,
+                        ref bestScore,
+                        ref selectedAngle,
+                        out Vector3 candidate))
+                {
+                    continue;
+                }
+
+                bestHorizontal = candidate;
+                bestHasRoute = true;
+                selectedAngle = angle;
+                break;
             }
         }
 
         Vector3 steer = new(bestHorizontal.x, desiredDir.y, bestHorizontal.z);
         Vector3 result = steer.sqrMagnitude > 0.0001f ? steer.normalized : desiredDir;
         return new UnderwaterNavigationPlan(bestHasRoute, result);
+    }
+
+    private static bool IsPreferredSteerAngle(float angle, float preferredSide)
+    {
+        return Mathf.Abs(angle) <= PreferredSteerAngleMax && Mathf.Sign(angle) == preferredSide;
+    }
+
+    private static bool EvaluateSteerCandidate(
+        BaseAI ai,
+        Vector3 center,
+        Vector3 horizontal,
+        float angle,
+        float radius,
+        float checkDistance,
+        ref Vector3 bestHorizontal,
+        ref bool bestHasRoute,
+        ref float bestScore,
+        ref float selectedAngle,
+        out Vector3 candidate)
+    {
+        candidate = Quaternion.Euler(0f, angle, 0f) * horizontal;
+        if (ai.CanMove(candidate, radius, checkDistance))
+        {
+            return true;
+        }
+
+        float freeDistance = ai.Raycast(center, candidate, checkDistance * 2f, 0.1f);
+        float score = freeDistance - Mathf.Abs(angle) * 0.01f;
+        if (score <= bestScore)
+        {
+            return false;
+        }
+
+        bestScore = score;
+        bestHorizontal = candidate;
+        bestHasRoute = freeDistance >= checkDistance * 0.9f;
+        selectedAngle = angle;
+        return false;
     }
 }

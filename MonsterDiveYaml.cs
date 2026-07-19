@@ -40,6 +40,7 @@ public partial class ServerSyncModTemplatePlugin
         public float? ActiveDepthAdjustSpeed { get; set; }
         public float? ShallowWaterFleeDepth { get; set; }
         public bool? PreserveSpawnDepth { get; set; }
+        public bool? AvoidanceSteering { get; set; }
         public List<string> Prefabs { get; set; } = new();
     }
 
@@ -227,7 +228,8 @@ public partial class ServerSyncModTemplatePlugin
             float activeDepthAdjustSpeed = NormalizeActiveDepthAdjustSpeed(groupName, group.ActiveDepthAdjustSpeed);
             float shallowWaterFleeDepth = NormalizeShallowWaterFleeDepth(groupName, group.ShallowWaterFleeDepth);
             bool preserveSpawnDepth = group.PreserveSpawnDepth ?? DefaultPreserveSpawnDepth;
-            ConfiguredDiveProfile configuredDiveProfile = new(groupName, passiveProfile, activeMinDepth, activeDepthAdjustSpeed, shallowWaterFleeDepth, preserveSpawnDepth);
+            bool avoidanceSteering = group.AvoidanceSteering ?? DefaultAvoidanceSteering;
+            ConfiguredDiveProfile configuredDiveProfile = new(groupName, passiveProfile, activeMinDepth, activeDepthAdjustSpeed, shallowWaterFleeDepth, preserveSpawnDepth, avoidanceSteering);
             AddYamlGroupEntries(configuredProfilesByPrefabName, group.Prefabs, configuredDiveProfile);
         }
 
@@ -414,7 +416,6 @@ public partial class ServerSyncModTemplatePlugin
             "ArcticSerpent_TW",
             "SA_Orca",
             "SA_Dolphin",
-            "SA_WhiteShark",
             "SA_HumboldtSquid",
             "SA_LeatherbackSeaTurtle",
             "SA_RightWhale",
@@ -426,6 +427,12 @@ public partial class ServerSyncModTemplatePlugin
             "SA_GreenTurtle",
             "SA_RedTurtle",
             "SA_YellowTurtle"
+        });
+        builder.AppendLine();
+        builder.AppendLine("# Disable angled avoidance only for prefabs that jitter while diving.");
+        AppendDefaultGroup(builder, "mods_surface_nosteering", 0f, 10f, 20f, SwimDepthAdjustSpeed, avoidanceSteering: false, examplePrefabs: new[]
+        {
+            "SA_WhiteShark"
         });
         builder.AppendLine();
         AppendDefaultGroup(builder, "mods_midwater", 0f, 15f, 30f, SwimDepthAdjustSpeed, examplePrefabs: new[]
@@ -454,7 +461,7 @@ public partial class ServerSyncModTemplatePlugin
         return builder.ToString();
     }
 
-    private static void AppendDefaultGroup(StringBuilder builder, string groupName, float minDepth, float centerDepth, float maxDepth, float activeDepthAdjustSpeed, bool includeGroupHeaderComment = false, bool includeFieldComments = false, IEnumerable<string>? examplePrefabs = null)
+    private static void AppendDefaultGroup(StringBuilder builder, string groupName, float minDepth, float centerDepth, float maxDepth, float activeDepthAdjustSpeed, bool includeGroupHeaderComment = false, bool includeFieldComments = false, bool avoidanceSteering = DefaultAvoidanceSteering, IEnumerable<string>? examplePrefabs = null)
     {
         string groupHeaderComment = includeGroupHeaderComment
             ? " # You can use any group name. Add your own groups"
@@ -466,6 +473,7 @@ public partial class ServerSyncModTemplatePlugin
         string activeAdjustComment = includeFieldComments ? " # How quickly this group adjusts swim depth while alerted or chasing a target." : string.Empty;
         string shallowFleeComment = includeFieldComments ? " # Current terrain water depth below this value makes the monster flee from its target. 0 disables it." : string.Empty;
         string preserveSpawnComment = includeFieldComments ? " # If true, monsters spawned underwater keep their initial spawn depth instead of surfacing first." : string.Empty;
+        string avoidanceSteeringComment = includeFieldComments ? " # If false, skips DiveIn's angled obstacle avoidance and swims directly toward the current target." : string.Empty;
         string prefabsComment = includeFieldComments ? " # Monster prefab names assigned to this passive profile group." : string.Empty;
         builder.AppendLine($"{groupName}:{groupHeaderComment}");
         builder.AppendLine($"  passive_min_depth: {FormatYamlFloat(minDepth)}{minDepthComment}");
@@ -475,6 +483,7 @@ public partial class ServerSyncModTemplatePlugin
         builder.AppendLine($"  active_depth_adjust_speed: {FormatYamlFloat(activeDepthAdjustSpeed)}{activeAdjustComment}");
         builder.AppendLine($"  shallow_water_flee_depth: {FormatYamlFloat(DefaultShallowWaterFleeDepth)}{shallowFleeComment}");
         builder.AppendLine($"  preserve_spawn_depth: {FormatYamlBool(DefaultPreserveSpawnDepth)}{preserveSpawnComment}");
+        builder.AppendLine($"  avoidance_steering: {FormatYamlBool(avoidanceSteering)}{avoidanceSteeringComment}");
         if (examplePrefabs != null)
         {
             string[] prefabArray = examplePrefabs.Where(static prefab => !string.IsNullOrWhiteSpace(prefab)).ToArray();

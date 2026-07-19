@@ -55,6 +55,7 @@ surface_patrol: # You can use any group name. Add your own groups
   active_depth_adjust_speed: 2 # How quickly this group adjusts swim depth while alerted or chasing a target.
   shallow_water_flee_depth: 0 # Current terrain water depth below this value makes the monster flee from its target. 0 disables it.
   preserve_spawn_depth: false # If true, monsters spawned underwater keep their initial spawn depth instead of surfacing first.
+  avoidance_steering: true # If false, skips DiveIn's angled obstacle avoidance and swims directly toward the current target.
   prefabs: # Monster prefab names assigned to this passive profile group.
     - Leech
     - Abomination
@@ -69,6 +70,7 @@ mid_water:
   active_depth_adjust_speed: 2
   shallow_water_flee_depth: 0
   preserve_spawn_depth: false
+  avoidance_steering: true
   prefabs: []
 
 deep_patrol:
@@ -79,6 +81,7 @@ deep_patrol:
   active_depth_adjust_speed: 2
   shallow_water_flee_depth: 0
   preserve_spawn_depth: false
+  avoidance_steering: true
   prefabs: []
 
 ## Mod prefabs sample
@@ -91,15 +94,31 @@ mods_surface:
   active_depth_adjust_speed: 2
   shallow_water_flee_depth: 0
   preserve_spawn_depth: false
+  avoidance_steering: true
   prefabs:
     - Neck_RtD
     - Animal_Dolphin_RtD
     - Animal_Cod_RtD
     ...
+
+# Disable angled avoidance only for prefabs that jitter while diving.
+mods_surface_nosteering:
+  passive_min_depth: 0
+  passive_center_depth: 10
+  passive_max_depth: 20
+  active_min_depth: 0.25
+  active_depth_adjust_speed: 2
+  shallow_water_flee_depth: 0
+  preserve_spawn_depth: false
+  avoidance_steering: false
+  prefabs:
+    - SA_WhiteShark
 ```
 Notes:
 
 - If the same prefab appears in multiple groups, only the first assignment is kept.
+- `avoidance_steering: false` keeps DiveIn depth behavior but disables its angled obstacle avoidance for that group.
+- Existing YAML files that omit `avoidance_steering` continue to use the default value `true`.
 - Invalid YAML keeps the previously applied settings.
 - When the server is the source of truth, clients use the synced server YAML instead of their local file.
 

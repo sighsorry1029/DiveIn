@@ -236,24 +236,15 @@ internal static class UnderwaterCameraPatches
         UnderwaterVisualState.ApplyFogOverride(diver);
     }
 
-    private static bool TryGetUnderwaterSurfaceLevel(WaterVolume? waterVolume, out float waterLevel)
+    private static bool ShouldRenderUnderwaterSurface(WaterVolume? waterVolume)
     {
-        waterLevel = 0f;
         if (waterVolume == null || waterVolume.m_waterSurface == null)
         {
             UnderwaterSurfaceRenderer.Reset(waterVolume);
             return false;
         }
 
-        VisualMode mode = GetVisualMode(GameCamera.instance, out _, out Camera? camera);
-        if (mode != VisualMode.Underwater || camera == null)
-        {
-            UnderwaterSurfaceRenderer.Reset(waterVolume);
-            return false;
-        }
-
-        waterLevel = waterVolume.GetWaterSurface(camera.transform.position, 1f);
-        if (camera.transform.position.y >= waterLevel)
+        if (GetVisualMode(GameCamera.instance, out _, out _) != VisualMode.Underwater)
         {
             UnderwaterSurfaceRenderer.Reset(waterVolume);
             return false;
@@ -289,11 +280,11 @@ internal static class UnderwaterCameraPatches
     [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.UpdateMaterials))]
     private static void WaterVolumeUpdateMaterialsPrefix(WaterVolume __instance)
     {
-        if (!TryGetUnderwaterSurfaceLevel(__instance, out float waterLevel))
+        if (!ShouldRenderUnderwaterSurface(__instance))
         {
             return;
         }
 
-        UnderwaterSurfaceRenderer.Apply(__instance, waterLevel);
+        UnderwaterSurfaceRenderer.Apply(__instance);
     }
 }

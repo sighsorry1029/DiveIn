@@ -13,6 +13,7 @@ public partial class ServerSyncModTemplatePlugin
     private static readonly HashSet<int> ShallowWaterFleeingByInstance = new();
     private const int MaxCacheEntries = 2048;
     private const bool DefaultPreserveSpawnDepth = false;
+    private const bool DefaultAvoidanceSteering = true;
     private const float ShallowWaterFleeExitBuffer = 1f;
     private const float ShallowWaterRetargetDelay = 3f;
 
@@ -38,8 +39,9 @@ public partial class ServerSyncModTemplatePlugin
         public readonly float ActiveDepthAdjustSpeed;
         public readonly float ShallowWaterFleeDepth;
         public readonly bool PreserveSpawnDepth;
+        public readonly bool AvoidanceSteering;
 
-        public ConfiguredDiveProfile(string groupName, PassiveDepthProfile passiveDepthProfile, float activeMinDepth, float activeDepthAdjustSpeed, float shallowWaterFleeDepth, bool preserveSpawnDepth)
+        public ConfiguredDiveProfile(string groupName, PassiveDepthProfile passiveDepthProfile, float activeMinDepth, float activeDepthAdjustSpeed, float shallowWaterFleeDepth, bool preserveSpawnDepth, bool avoidanceSteering)
         {
             GroupName = groupName;
             PassiveDepthProfile = passiveDepthProfile;
@@ -47,6 +49,7 @@ public partial class ServerSyncModTemplatePlugin
             ActiveDepthAdjustSpeed = activeDepthAdjustSpeed;
             ShallowWaterFleeDepth = shallowWaterFleeDepth;
             PreserveSpawnDepth = preserveSpawnDepth;
+            AvoidanceSteering = avoidanceSteering;
         }
     }
 

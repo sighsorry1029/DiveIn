@@ -34,7 +34,7 @@ internal static class UnderwaterCombatPatches
             diver.SuppressMovementForCombat();
         }
 
-        if ((block || blockHold) && CanForceShowHiddenBlocker(__instance))
+        if (block && CanForceShowHiddenBlocker(__instance))
         {
             __instance.ShowHandItems();
         }
@@ -58,6 +58,7 @@ internal static class UnderwaterCombatPatches
         return PlayerDiveUtils.TryGetUnderwaterLocalDiver(player, out _)
                && !player.IsOnGround()
                && !player.InDodge()
+               && !HasEquippedBlocker(player)
                && HasHiddenBlocker(player)
                && !HasWaterRestrictedHiddenBlocker(player);
     }
@@ -76,16 +77,22 @@ internal static class UnderwaterCombatPatches
 
     private static bool HasHiddenBlocker(Player player)
     {
-        return IsBlockableHiddenItem(player.m_hiddenLeftItem) ||
-               IsBlockableHiddenItem(player.m_hiddenRightItem);
+        return IsBlockableItem(player.m_hiddenLeftItem) ||
+               IsBlockableItem(player.m_hiddenRightItem);
+    }
+
+    private static bool HasEquippedBlocker(Player player)
+    {
+        return IsBlockableItem(player.m_leftItem) ||
+               IsBlockableItem(player.m_rightItem);
     }
 
     private static bool IsWaterRestrictedHiddenBlocker(ItemDrop.ItemData? item)
     {
-        return IsBlockableHiddenItem(item) && ServerSyncModTemplatePlugin.IsWaterRestrictedItem(item);
+        return IsBlockableItem(item) && ServerSyncModTemplatePlugin.IsWaterRestrictedItem(item);
     }
 
-    private static bool IsBlockableHiddenItem(ItemDrop.ItemData? item)
+    private static bool IsBlockableItem(ItemDrop.ItemData? item)
     {
         return item?.m_shared != null && item.m_shared.m_blockable;
     }
