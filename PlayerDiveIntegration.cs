@@ -110,7 +110,7 @@ internal static class PlayerDivePatches
 
         diver.UpdateSwimSpeed();
         bool movementSuppressedForCombat = diver.IsMovementSuppressedForCombat();
-        if (!movementSuppressedForCombat && ServerSyncModTemplatePlugin.IsDiveAscendInputHeld() && diver.IsUnderSurface())
+        if (!movementSuppressedForCombat && ServerSyncModTemplatePlugin.IsDiveAscendInputHeld() && diver.CanContinueAscending())
         {
             diver.Dive(dt, ascend: true, out Vector3? originalMoveDir);
             __state = new SwimmingUpdateState(diver, originalMoveDir);
@@ -128,8 +128,9 @@ internal static class PlayerDivePatches
 
     [HarmonyPostfix]
     [HarmonyPatch(typeof(Character), nameof(Character.UpdateSwimming))]
-    private static void CharacterUpdateSwimmingPostfix(Character __instance, ref SwimmingUpdateState __state)
+    private static void CharacterUpdateSwimmingPostfix(Character __instance, float dt, ref SwimmingUpdateState __state)
     {
+        __state.Diver?.UpdateSurfaceRotationLeveling(dt);
         __state.Diver?.ResetSwimSpeedOverride();
         __state.Diver?.EndSwimmingUpdateContext();
         if (__state.OriginalMoveDir.HasValue)

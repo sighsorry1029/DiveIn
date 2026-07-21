@@ -63,10 +63,13 @@ internal sealed class PlayerDiveController : MonoBehaviour
 {
     private const float HeadUnderwaterTolerance = 0.01f;
     private const float MinimumSurfaceSwimDepth = 0.1f;
+    private const float SurfaceExitClearance = 0.1f;
     private const float DivingSwimDepthOffset = 1.1f;
     private const float BottomAscendDepthStep = 0.75f;
     private const float CombatMovementSuppressionDuration = 0.1f;
     private float _surfaceSwimDepth = 2f;
+    private float? _surfaceExitSwimDepth;
+    private bool _surfaceRotationLevelingActive;
     private bool _underwaterMovementActive;
     private bool _fastSwimEnabled;
     private bool _hasSwimSpeedOverride;
@@ -110,6 +113,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
     {
         _underwaterMovementActive = false;
         _fastSwimEnabled = false;
+        _surfaceRotationLevelingActive = false;
         ResetSwimDepthToDefault();
         ResetSwimSpeedOverride();
     }
@@ -124,6 +128,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
 
     internal void ResetSwimDepthToDefault()
     {
+        _surfaceExitSwimDepth = null;
         Player.m_swimDepth = _surfaceSwimDepth;
     }
 
@@ -241,6 +246,11 @@ internal sealed class PlayerDiveController : MonoBehaviour
     internal bool IsUnderSurface()
     {
         return Player.m_swimDepth > _surfaceSwimDepth + HeadUnderwaterTolerance;
+    }
+
+    internal bool CanContinueAscending()
+    {
+        return IsUnderSurface() || ShouldForceSwimming();
     }
 
     internal bool IsDiving()
@@ -440,10 +450,77 @@ internal sealed class PlayerDiveController : MonoBehaviour
         {
             EnsureAscendTargetFromBottom();
         }
+        else
+        {
+            _surfaceExitSwimDepth = null;
+            _surfaceRotationLevelingActive = false;
+        }
 
         Vector3 diveVelocity = CalculateSwimVelocity();
         float newDepth = Player.m_swimDepth - (diveVelocity.y * dt);
-        Player.m_swimDepth = Mathf.Max(newDepth, _surfaceSwimDepth);
+        float minimumDepth = ascend ? GetAscendMinimumDepth() : _surfaceSwimDepth;
+        Player.m_swimDepth = Mathf.Max(newDepth, minimumDepth);
+    }
+
+    private float GetAscendMinimumDepth()
+    {
+        if (IsUnderSurface() || !IsHeadUnderwater())
+        {
+            _surfaceExitSwimDepth = null;
+            return _surfaceSwimDepth;
+        }
+
+        if (!_surfaceExitSwimDepth.HasValue)
+        {
+            float eyeY = Player.m_eye != null ? Player.m_eye.position.y : Player.transform.position.y;
+            float headDepth = Mathf.Max(0f, Player.GetLiquidLevel() - eyeY);
+            _surfaceExitSwimDepth = Mathf.Max(
+                MinimumSurfaceSwimDepth,
+                _surfaceSwimDepth - headDepth - SurfaceExitClearance);
+            _surfaceRotationLevelingActive = true;
+        }
+
+        return _surfaceExitSwimDepth.Value;
+    }
+
+    internal void UpdateSurfaceRotationLeveling(float dt)
+    {
+        if (!_surfaceRotationLevelingActive)
+        {
+            return;
+        }
+
+        if (!ShouldTreatAsSwimming() || Player.IsOnGround())
+        {
+            _surfaceRotationLevelingActive = false;
+            return;
+        }
+
+        Vector3 horizontalForward = Player.transform.forward;
+        horizontalForward.y = 0f;
+        if (horizontalForward.sqrMagnitude < 0.0001f)
+        {
+            horizontalForward = GetHorizontalLookDirection(1f);
+        }
+
+        if (horizontalForward.sqrMagnitude < 0.0001f)
+        {
+            _surfaceRotationLevelingActive = false;
+            return;
+        }
+
+        Quaternion targetRotation = Quaternion.LookRotation(horizontalForward.normalized, Vector3.up);
+        float effectiveSpeed = Player.m_swimTurnSpeed * Player.GetAttackSpeedFactorRotation();
+        Player.transform.rotation = Quaternion.RotateTowards(
+            Player.transform.rotation,
+            targetRotation,
+            effectiveSpeed * dt);
+
+        if (Quaternion.Angle(Player.transform.rotation, targetRotation) <= 0.1f)
+        {
+            Player.transform.rotation = targetRotation;
+            _surfaceRotationLevelingActive = false;
+        }
     }
 
     private void EnsureAscendTargetFromBottom()
