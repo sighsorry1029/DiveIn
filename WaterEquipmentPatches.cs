@@ -1,6 +1,7 @@
 // Contains player diving code derived from UnderTheSea (GPL-3.0) and modified for DiveIn on 2026-04-04.
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection.Emit;
 using HarmonyLib;
 using UnityEngine;
@@ -10,16 +11,19 @@ namespace ServerSyncModTemplate;
 [HarmonyPatch]
 internal static class WaterEquipmentPatches
 {
+    private static readonly object BlacklistLock = new();
+    private static string _lastBlacklistRaw = string.Empty;
+    private static HashSet<string> _blacklist = new(StringComparer.OrdinalIgnoreCase);
+
     private static readonly CodeMatch[] SwimmingRestrictionPattern =
     {
         new(OpCodes.Ldarg_0),
         new(OpCodes.Call, AccessTools.Method(typeof(Character), nameof(Character.IsSwimming))),
-        new(OpCodes.Brfalse),
+        new(instruction => instruction.opcode == OpCodes.Brfalse || instruction.opcode == OpCodes.Brfalse_S),
         new(OpCodes.Ldarg_0),
-        new(OpCodes.Call, AccessTools.Method(typeof(Character), nameof(Character.IsOnGround)))
+        new(OpCodes.Call, AccessTools.Method(typeof(Character), nameof(Character.IsOnGround))),
+        new(instruction => instruction.opcode == OpCodes.Brtrue || instruction.opcode == OpCodes.Brtrue_S)
     };
-
-    private static readonly int SwimmingRestrictionInstructionCount = SwimmingRestrictionPattern.Length + 1;
 
     private static bool IsWaterEquipmentBypassTarget(Humanoid? humanoid)
     {
@@ -29,32 +33,42 @@ internal static class WaterEquipmentPatches
     private static bool ShouldKeepWaterRestrictionForHumanoid(Humanoid humanoid)
     {
         return !IsWaterEquipmentBypassTarget(humanoid)
-               || ServerSyncModTemplatePlugin.HumanoidHasWaterRestrictedEquipment(humanoid);
+               || HasWaterRestrictedHandItem(humanoid);
     }
 
     private static bool ShouldKeepWaterRestrictionForEquipItem(Humanoid humanoid, ItemDrop.ItemData item)
     {
         return !IsWaterEquipmentBypassTarget(humanoid)
-               || ServerSyncModTemplatePlugin.IsWaterRestrictedItem(item);
+               || IsWaterRestrictedItem(item);
     }
 
     [HarmonyTranspiler]
     [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.UpdateEquipment))]
     private static IEnumerable<CodeInstruction> HumanoidUpdateEquipmentTranspiler(IEnumerable<CodeInstruction> instructions)
     {
-        return InsertWaterEquipmentBypass<Humanoid>(instructions, "Humanoid.UpdateEquipment", OpCodes.Ldarg_0, ShouldKeepWaterRestrictionForHumanoid);
+        return InsertWaterEquipmentBypass(
+            instructions,
+            "Humanoid.UpdateEquipment",
+            new[]
+            {
+                new CodeInstruction(OpCodes.Ldarg_0),
+                Transpilers.EmitDelegate((Func<Humanoid, bool>)ShouldKeepWaterRestrictionForHumanoid)
+            });
     }
 
     [HarmonyTranspiler]
     [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.EquipItem))]
     private static IEnumerable<CodeInstruction> HumanoidEquipItemTranspiler(IEnumerable<CodeInstruction> instructions)
     {
-        return InsertWaterEquipmentBypass<Humanoid, ItemDrop.ItemData>(
+        return InsertWaterEquipmentBypass(
             instructions,
             "Humanoid.EquipItem",
-            OpCodes.Ldarg_0,
-            OpCodes.Ldarg_1,
-            ShouldKeepWaterRestrictionForEquipItem);
+            new[]
+            {
+                new CodeInstruction(OpCodes.Ldarg_0),
+                new CodeInstruction(OpCodes.Ldarg_1),
+                Transpilers.EmitDelegate((Func<Humanoid, ItemDrop.ItemData, bool>)ShouldKeepWaterRestrictionForEquipItem)
+            });
     }
 
     [HarmonyPrefix]
@@ -86,8 +100,9 @@ internal static class WaterEquipmentPatches
                && !player.InDodge()
                && player.GetRightItem() == null
                && player.GetLeftItem() == null
-               && HasHiddenHandItems(player)
-               && !HasWaterRestrictedHiddenHandItems(player);
+               && (player.m_hiddenRightItem != null || player.m_hiddenLeftItem != null)
+               && !IsWaterRestrictedItem(player.m_hiddenRightItem)
+               && !IsWaterRestrictedItem(player.m_hiddenLeftItem);
     }
 
     private static bool WasHideInputPressed(Player player)
@@ -105,54 +120,48 @@ internal static class WaterEquipmentPatches
         return joyHide && !ZInput.GetButton("JoyAltKeys") && !player.InPlaceMode();
     }
 
-    private static bool HasHiddenHandItems(Player player)
+    internal static bool IsWaterRestrictedItem(ItemDrop.ItemData? item)
     {
-        return player.m_hiddenRightItem != null || player.m_hiddenLeftItem != null;
+        if (item == null || item.m_dropPrefab == null)
+        {
+            return false;
+        }
+
+        RefreshBlacklistIfNeeded();
+        string prefabName = Utils.GetPrefabName(item.m_dropPrefab);
+        return !string.IsNullOrEmpty(prefabName) && _blacklist.Contains(prefabName);
     }
 
-    private static bool HasWaterRestrictedHiddenHandItems(Player player)
+    private static bool HasWaterRestrictedHandItem(Humanoid humanoid)
     {
-        return IsWaterRestrictedHiddenItem(player.m_hiddenRightItem) ||
-               IsWaterRestrictedHiddenItem(player.m_hiddenLeftItem);
+        return IsWaterRestrictedItem(humanoid.m_rightItem)
+               || IsWaterRestrictedItem(humanoid.m_hiddenRightItem)
+               || IsWaterRestrictedItem(humanoid.m_leftItem)
+               || IsWaterRestrictedItem(humanoid.m_hiddenLeftItem);
     }
 
-    private static bool IsWaterRestrictedHiddenItem(ItemDrop.ItemData? item)
+    private static void RefreshBlacklistIfNeeded()
     {
-        return item != null && ServerSyncModTemplatePlugin.IsWaterRestrictedItem(item);
-    }
+        string raw = ServerSyncModTemplatePlugin._waterEquipmentBlacklist?.Value ?? string.Empty;
+        if (string.Equals(raw, _lastBlacklistRaw, StringComparison.Ordinal))
+        {
+            return;
+        }
 
-    private static IEnumerable<CodeInstruction> InsertWaterEquipmentBypass<T>(
-        IEnumerable<CodeInstruction> instructions,
-        string methodName,
-        OpCode argumentLoadOpCode,
-        Func<T, bool> shouldKeepWaterRestriction)
-    {
-        return InsertWaterEquipmentBypass(
-            instructions,
-            methodName,
-            new[]
+        lock (BlacklistLock)
+        {
+            if (string.Equals(raw, _lastBlacklistRaw, StringComparison.Ordinal))
             {
-                new CodeInstruction(argumentLoadOpCode),
-                Transpilers.EmitDelegate(shouldKeepWaterRestriction)
-            });
-    }
+                return;
+            }
 
-    private static IEnumerable<CodeInstruction> InsertWaterEquipmentBypass<T1, T2>(
-        IEnumerable<CodeInstruction> instructions,
-        string methodName,
-        OpCode firstArgumentLoadOpCode,
-        OpCode secondArgumentLoadOpCode,
-        Func<T1, T2, bool> shouldKeepWaterRestriction)
-    {
-        return InsertWaterEquipmentBypass(
-            instructions,
-            methodName,
-            new[]
-            {
-                new CodeInstruction(firstArgumentLoadOpCode),
-                new CodeInstruction(secondArgumentLoadOpCode),
-                Transpilers.EmitDelegate(shouldKeepWaterRestriction)
-            });
+            _blacklist = raw
+                .Split(new[] { ',', ';', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(entry => entry.Trim())
+                .Where(entry => entry.Length > 0)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            _lastBlacklistRaw = raw;
+        }
     }
 
     private static IEnumerable<CodeInstruction> InsertWaterEquipmentBypass(
@@ -161,12 +170,11 @@ internal static class WaterEquipmentPatches
         IReadOnlyList<CodeInstruction> guardInstructions)
     {
         List<CodeInstruction> code = new(instructions);
-        if (!TryFindSwimmingRestrictionInsertionPoint(code, methodName, out CodeMatcher codeMatcher))
+        if (!TryFindSwimmingRestrictionInsertionPoint(code, methodName, out CodeMatcher codeMatcher, out Label branchTarget))
         {
             return code;
         }
 
-        object branchTarget = codeMatcher.InstructionAt(-1).operand;
         List<CodeInstruction> insertedInstructions = new(guardInstructions)
         {
             new(OpCodes.Brfalse, branchTarget)
@@ -178,8 +186,13 @@ internal static class WaterEquipmentPatches
             .InstructionEnumeration();
     }
 
-    private static bool TryFindSwimmingRestrictionInsertionPoint(List<CodeInstruction> code, string methodName, out CodeMatcher codeMatcher)
+    private static bool TryFindSwimmingRestrictionInsertionPoint(
+        List<CodeInstruction> code,
+        string methodName,
+        out CodeMatcher codeMatcher,
+        out Label branchTarget)
     {
+        branchTarget = default;
         codeMatcher = new CodeMatcher(code);
         codeMatcher.MatchStartForward(SwimmingRestrictionPattern);
         if (!codeMatcher.IsValid)
@@ -189,7 +202,36 @@ internal static class WaterEquipmentPatches
             return false;
         }
 
-        codeMatcher.Advance(SwimmingRestrictionInstructionCount);
+        object swimmingBranchTarget = codeMatcher.InstructionAt(2).operand;
+        object groundBranchTarget = codeMatcher.InstructionAt(5).operand;
+        if (swimmingBranchTarget is not Label target
+            || groundBranchTarget is not Label
+            || !swimmingBranchTarget.Equals(groundBranchTarget))
+        {
+            ServerSyncModTemplatePlugin.ServerSyncModTemplateLogger.LogWarning(
+                $"Swimming item restriction in {methodName} does not use the expected common branch target. Water equipment bypass for this method is disabled; vanilla swimming restrictions remain.");
+            return false;
+        }
+
+        bool targetExists = false;
+        foreach (CodeInstruction instruction in code)
+        {
+            if (instruction.labels.Contains(target))
+            {
+                targetExists = true;
+                break;
+            }
+        }
+
+        if (!targetExists)
+        {
+            ServerSyncModTemplatePlugin.ServerSyncModTemplateLogger.LogWarning(
+                $"Swimming item restriction branch target in {methodName} could not be resolved. Water equipment bypass for this method is disabled; vanilla swimming restrictions remain.");
+            return false;
+        }
+
+        branchTarget = target;
+        codeMatcher.Advance(SwimmingRestrictionPattern.Length);
         if (!codeMatcher.IsValid)
         {
             ServerSyncModTemplatePlugin.ServerSyncModTemplateLogger.LogWarning(

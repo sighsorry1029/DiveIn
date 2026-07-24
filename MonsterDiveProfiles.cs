@@ -59,13 +59,32 @@ public partial class ServerSyncModTemplatePlugin
         public readonly bool AvoidWater;
         public readonly bool AvoidLand;
         public readonly bool CanSwim;
+        public readonly float? SwimDepth;
 
-        public OriginalDiveFlags(MonsterAI monsterAI, bool avoidWater, bool avoidLand, bool canSwim)
+        public OriginalDiveFlags(
+            MonsterAI monsterAI,
+            bool avoidWater,
+            bool avoidLand,
+            bool canSwim,
+            float? swimDepth)
         {
             MonsterAI = monsterAI;
             AvoidWater = avoidWater;
             AvoidLand = avoidLand;
             CanSwim = canSwim;
+            SwimDepth = swimDepth;
+        }
+    }
+
+    private readonly struct ShallowWaterFleeRequest
+    {
+        public readonly bool ShouldFlee;
+        public readonly Vector3 FleeFrom;
+
+        public ShallowWaterFleeRequest(Vector3 fleeFrom)
+        {
+            ShouldFlee = true;
+            FleeFrom = fleeFrom;
         }
     }
 
@@ -86,15 +105,20 @@ public partial class ServerSyncModTemplatePlugin
         return TryGetConfiguredDiveProfile(monsterAI, out _);
     }
 
-    private static bool TryGetConfiguredMonster(BaseAI ai, out MonsterAI monsterAI)
+    private static bool TryGetConfiguredMonster(
+        BaseAI ai,
+        out MonsterAI monsterAI,
+        out ConfiguredDiveProfile configuredDiveProfile)
     {
-        if (ai is MonsterAI typedMonster && IsConfiguredMonster(typedMonster))
+        if (ai is MonsterAI typedMonster &&
+            TryGetConfiguredDiveProfile(typedMonster, out configuredDiveProfile))
         {
             monsterAI = typedMonster;
             return true;
         }
 
         monsterAI = null!;
+        configuredDiveProfile = default;
         return false;
     }
 
@@ -114,31 +138,60 @@ public partial class ServerSyncModTemplatePlugin
         return !monsterAI.IsAlerted() && monsterAI.m_targetCreature == null && monsterAI.m_targetStatic == null;
     }
 
-    private static bool TryFleeFromShallowWater(MonsterAI monsterAI, float dt)
+    private static ShallowWaterFleeRequest GetShallowWaterFleeRequest(
+        MonsterAI monsterAI,
+        ConfiguredDiveProfile profile)
     {
-        if (!ShouldFleeFromShallowWater(monsterAI))
+        if (!ShouldFleeFromShallowWater(monsterAI, profile))
         {
-            return false;
+            return default;
         }
 
         Vector3 fleeFrom = monsterAI.m_targetCreature != null
             ? monsterAI.m_targetCreature.transform.position
-            : monsterAI.m_lastKnownTargetPos;
-        if (monsterAI.m_targetCreature != null)
+            : monsterAI.m_targetStatic != null
+                ? monsterAI.m_targetStatic.GetCenter()
+                : monsterAI.m_lastKnownTargetPos;
+        return new ShallowWaterFleeRequest(fleeFrom);
+    }
+
+    private static bool HasVanillaMonsterAIPriority(MonsterAI monsterAI)
+    {
+        if (monsterAI.IsSleeping())
         {
-            monsterAI.m_lastKnownTargetPos = fleeFrom;
+            return true;
         }
 
+        if (monsterAI.m_tamable != null
+            && monsterAI.m_tamable.m_saddle != null
+            && monsterAI.m_tamable.m_saddle.HaveValidUser())
+        {
+            return true;
+        }
+
+        if (monsterAI.DespawnInDay() && EnvMan.IsDay())
+        {
+            return true;
+        }
+
+        return monsterAI.IsEventCreature() && !RandEventSystem.HaveActiveEvent();
+    }
+
+    private static void ApplyShallowWaterFlee(
+        MonsterAI monsterAI,
+        float dt,
+        ShallowWaterFleeRequest fleeRequest)
+    {
+        monsterAI.m_lastKnownTargetPos = fleeRequest.FleeFrom;
         monsterAI.m_targetCreature = null;
         monsterAI.m_targetStatic = null;
         monsterAI.m_updateTargetTimer = Mathf.Max(monsterAI.m_updateTargetTimer, ShallowWaterRetargetDelay);
-        monsterAI.Flee(dt, fleeFrom);
-        return true;
+        monsterAI.Flee(dt, fleeRequest.FleeFrom);
     }
 
-    private static bool ShouldFleeFromShallowWater(MonsterAI monsterAI)
+    private static bool ShouldFleeFromShallowWater(MonsterAI monsterAI, ConfiguredDiveProfile profile)
     {
-        if (monsterAI == null || monsterAI.m_character == null || !TryGetConfiguredDiveProfile(monsterAI, out ConfiguredDiveProfile profile))
+        if (monsterAI == null || monsterAI.m_character == null)
         {
             if (monsterAI != null)
             {
@@ -157,15 +210,23 @@ public partial class ServerSyncModTemplatePlugin
 
         if (monsterAI.m_nview == null || !monsterAI.m_nview.IsOwner())
         {
-            return false;
-        }
-
-        if (IsPassiveDiveState(monsterAI) || !ShouldUseWaterDiveMode(monsterAI))
-        {
+            ShallowWaterFleeingByInstance.Remove(monsterAI.GetInstanceID());
             return false;
         }
 
         int instanceId = monsterAI.GetInstanceID();
+        bool wasFleeing = ShallowWaterFleeingByInstance.Contains(instanceId);
+        if (!ShouldUseWaterDiveMode(monsterAI))
+        {
+            ShallowWaterFleeingByInstance.Remove(instanceId);
+            return false;
+        }
+
+        if (!wasFleeing && IsPassiveDiveState(monsterAI))
+        {
+            return false;
+        }
+
         if (!TryGetTerrainWaterDepth(monsterAI.m_character, out float terrainWaterDepth))
         {
             ShallowWaterFleeingByInstance.Remove(instanceId);
@@ -178,7 +239,7 @@ public partial class ServerSyncModTemplatePlugin
             return true;
         }
 
-        if (!ShallowWaterFleeingByInstance.Contains(instanceId))
+        if (!wasFleeing)
         {
             return false;
         }
@@ -213,13 +274,10 @@ public partial class ServerSyncModTemplatePlugin
         return true;
     }
 
-    private static void EnsureDiveFlags(MonsterAI monsterAI)
+    private static void EnsureDiveFlags(MonsterAI monsterAI, ConfiguredDiveProfile profile)
     {
         TrackOriginalDiveFlags(monsterAI);
-        if (TryGetConfiguredDiveProfile(monsterAI, out ConfiguredDiveProfile profile))
-        {
-            PreserveInitialUnderwaterSpawnDepth(monsterAI, profile);
-        }
+        PreserveInitialUnderwaterSpawnDepth(monsterAI, profile);
 
         if (monsterAI.m_avoidWater)
         {
@@ -319,9 +377,19 @@ public partial class ServerSyncModTemplatePlugin
         }
 
         int instanceId = monsterAI.GetInstanceID();
-        if (OriginalDiveFlagsByInstance.ContainsKey(instanceId))
+        if (OriginalDiveFlagsByInstance.TryGetValue(instanceId, out OriginalDiveFlags trackedFlags))
         {
-            return;
+            if (ReferenceEquals(trackedFlags.MonsterAI, monsterAI))
+            {
+                return;
+            }
+
+            if (trackedFlags.MonsterAI)
+            {
+                RestoreOriginalDiveFlags(trackedFlags);
+            }
+
+            RemoveTrackedMonsterState(instanceId);
         }
 
         Character character = monsterAI.m_character;
@@ -329,7 +397,8 @@ public partial class ServerSyncModTemplatePlugin
             monsterAI,
             monsterAI.m_avoidWater,
             monsterAI.m_avoidLand,
-            character != null && character.m_canSwim);
+            character != null && character.m_canSwim,
+            character != null ? character.m_swimDepth : (float?)null);
 
         if (OriginalDiveFlagsByInstance.Count > MaxCacheEntries)
         {
@@ -355,8 +424,6 @@ public partial class ServerSyncModTemplatePlugin
             if (!monsterAI)
             {
                 instanceIdsToRemove.Add(instanceId);
-                InitialSpawnDepthPreservedByInstance.Remove(instanceId);
-                ShallowWaterFleeingByInstance.Remove(instanceId);
                 continue;
             }
 
@@ -367,14 +434,12 @@ public partial class ServerSyncModTemplatePlugin
 
             RestoreOriginalDiveFlags(originalFlags);
             instanceIdsToRemove.Add(instanceId);
-            InitialSpawnDepthPreservedByInstance.Remove(instanceId);
-            ShallowWaterFleeingByInstance.Remove(instanceId);
             restoredCount++;
         }
 
         foreach (int instanceId in instanceIdsToRemove)
         {
-            OriginalDiveFlagsByInstance.Remove(instanceId);
+            RemoveTrackedMonsterState(instanceId);
         }
 
         return restoredCount;
@@ -399,9 +464,12 @@ public partial class ServerSyncModTemplatePlugin
             restoredCount++;
         }
 
-        OriginalDiveFlagsByInstance.Clear();
-        InitialSpawnDepthPreservedByInstance.Clear();
-        ShallowWaterFleeingByInstance.Clear();
+        List<int> instanceIdsToRemove = new(OriginalDiveFlagsByInstance.Keys);
+        foreach (int instanceId in instanceIdsToRemove)
+        {
+            RemoveTrackedMonsterState(instanceId);
+        }
+
         return restoredCount;
     }
 
@@ -419,6 +487,10 @@ public partial class ServerSyncModTemplatePlugin
         if (character != null)
         {
             character.m_canSwim = originalFlags.CanSwim;
+            if (originalFlags.SwimDepth.HasValue)
+            {
+                character.m_swimDepth = originalFlags.SwimDepth.Value;
+            }
         }
     }
 
@@ -437,14 +509,19 @@ public partial class ServerSyncModTemplatePlugin
             if (!originalFlags.MonsterAI)
             {
                 instanceIdsToRemove.Add(instanceId);
-                InitialSpawnDepthPreservedByInstance.Remove(instanceId);
-                ShallowWaterFleeingByInstance.Remove(instanceId);
             }
         }
 
         foreach (int instanceId in instanceIdsToRemove)
         {
-            OriginalDiveFlagsByInstance.Remove(instanceId);
+            RemoveTrackedMonsterState(instanceId);
         }
+    }
+
+    private static void RemoveTrackedMonsterState(int instanceId)
+    {
+        OriginalDiveFlagsByInstance.Remove(instanceId);
+        InitialSpawnDepthPreservedByInstance.Remove(instanceId);
+        ShallowWaterFleeingByInstance.Remove(instanceId);
     }
 }

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.1.9
+
+- Changed the synchronized Water Equipment Blacklist to preserve restrictions per listed item: listed armor and accessories no longer stow unrelated hand equipment, while listed hand items retain vanilla hand-item hiding.
+- Improved shallow-water flee behavior so configured creatures keep retreating until they clear the exit-depth buffer without skipping vanilla sleep, riding, event, or despawn processing.
+- Restored vanilla serpent stopping distance and swoop movement while using bounded local steering lookahead for smoother underwater pursuit.
+- Hardened `DiveIn.yaml` reloads and validation: rapid saves are no longer dropped, duplicate content is ignored, non-finite values keep the last valid configuration, and supported depth limits are normalized with warnings.
+- Improved swimming exception recovery and key-hint stability by reliably restoring temporary movement state, cleaning failed hint clones, and rebuilding layouts only when their content or visibility changes.
+- Improved underwater camera, fog, and surface-material restoration so DiveIn does not overwrite newer environment or mod changes when leaving the water.
+- Improved reload and shutdown cleanup, including restoration of configured creatures' original swim depth and removal of stale per-creature tracking state.
+- Added a synchronized version-update command and fail-fast Release packaging checks; normal builds no longer deploy to the game unless explicitly requested.
+
 ## 1.1.8
 
 - Fixed Space-only ascent stopping just below the surface unless a movement key was also held.

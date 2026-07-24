@@ -1,6 +1,6 @@
-using System;
 using System.Collections.Generic;
 using System.Linq;
+using BepInEx;
 using BepInEx.Configuration;
 using UnityEngine;
 
@@ -16,7 +16,6 @@ public partial class ServerSyncModTemplatePlugin
 
     internal const float DefaultUnderwaterDarknessFactor = 0.5f;
     internal const float DefaultUnderwaterVisibilityFalloff = 0.25f;
-    internal const float DefaultUnderwaterCameraMinWaterDistance = -5000f;
 
     internal static ConfigEntry<string> _waterEquipmentBlacklist = null!;
     internal static ConfigEntry<float> _surfaceStaminaRegenRateMultiplier = null!;
@@ -40,9 +39,23 @@ public partial class ServerSyncModTemplatePlugin
     internal static ConfigEntry<float> _underwaterDarknessFactor = null!;
     internal static ConfigEntry<float> _underwaterVisibilityFalloff = null!;
 
-    private static readonly object WaterEquipmentBlacklistLock = new();
-    private static string _lastWaterEquipmentBlacklistRaw = string.Empty;
-    private static HashSet<string> _waterEquipmentBlacklistSet = new(StringComparer.OrdinalIgnoreCase);
+    private sealed class ConfigurationManagerAttributes
+    {
+        public int? Order;
+    }
+
+    private sealed class AcceptableShortcuts : AcceptableValueBase
+    {
+        internal AcceptableShortcuts()
+            : base(typeof(KeyboardShortcut))
+        {
+        }
+
+        public override object Clamp(object value) => value;
+        public override bool IsValid(object value) => true;
+
+        public override string ToDescriptionString() => $"# Acceptable values: {string.Join(", ", UnityInput.Current.SupportedKeyCodes)}";
+    }
 
     private void InitializePlayerDiveConfig()
     {
@@ -51,7 +64,7 @@ public partial class ServerSyncModTemplatePlugin
             "Water Equipment Blacklist",
             "",
             new ConfigDescription(
-                "Comma-separated item prefab names that remain restricted in water. Everything not listed is allowed in water by default. Example: BowFineWood,ShieldBronzeBuckler.",
+                "Comma-separated item prefab names that keep their own vanilla water restriction. Listed armor and accessories do not hide unrelated hand equipment. A listed hand item still uses vanilla hand-item hiding, which can stow both hands. Example: BowFineWood,ShieldBronzeBuckler.",
                 null,
                 new ConfigurationManagerAttributes { Order = 100 }));
         _surfaceStaminaRegenRateMultiplier = config(
@@ -221,16 +234,6 @@ public partial class ServerSyncModTemplatePlugin
             synchronizedSetting: true);
     }
 
-    internal static bool IsUnderwaterVisualStylingEnabled()
-    {
-        return true;
-    }
-
-    internal static float GetUnderwaterCameraMinWaterDistance()
-    {
-        return DefaultUnderwaterCameraMinWaterDistance;
-    }
-
     internal static float GetUnderwaterDarknessFactor()
     {
         return Mathf.Max(0f, _underwaterDarknessFactor.Value) * 0.01f;
@@ -368,60 +371,15 @@ public partial class ServerSyncModTemplatePlugin
         };
     }
 
-    internal static bool IsWaterRestrictedItem(ItemDrop.ItemData? item)
+}
+
+public static class KeyboardExtensions
+{
+    extension(KeyboardShortcut shortcut)
     {
-        if (item == null || item.m_dropPrefab == null)
+        public bool IsKeyHeld()
         {
-            return false;
-        }
-
-        RefreshWaterEquipmentBlacklistIfNeeded();
-        string prefabName = Utils.GetPrefabName(item.m_dropPrefab);
-        return !string.IsNullOrEmpty(prefabName) && _waterEquipmentBlacklistSet.Contains(prefabName);
-    }
-
-    internal static bool HumanoidHasWaterRestrictedEquipment(Humanoid? humanoid)
-    {
-        if (humanoid == null)
-        {
-            return false;
-        }
-
-        return IsWaterRestrictedItem(humanoid.m_rightItem)
-               || IsWaterRestrictedItem(humanoid.m_hiddenRightItem)
-               || IsWaterRestrictedItem(humanoid.m_leftItem)
-               || IsWaterRestrictedItem(humanoid.m_hiddenLeftItem)
-               || IsWaterRestrictedItem(humanoid.m_chestItem)
-               || IsWaterRestrictedItem(humanoid.m_legItem)
-               || IsWaterRestrictedItem(humanoid.m_helmetItem)
-               || IsWaterRestrictedItem(humanoid.m_shoulderItem)
-               || IsWaterRestrictedItem(humanoid.m_utilityItem)
-               || IsWaterRestrictedItem(humanoid.m_trinketItem);
-    }
-
-    private static void RefreshWaterEquipmentBlacklistIfNeeded(bool force = false)
-    {
-        string raw = _waterEquipmentBlacklist?.Value ?? string.Empty;
-        if (!force && string.Equals(raw, _lastWaterEquipmentBlacklistRaw, StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        lock (WaterEquipmentBlacklistLock)
-        {
-            if (!force && string.Equals(raw, _lastWaterEquipmentBlacklistRaw, StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            _waterEquipmentBlacklistSet = raw
-                .Split(new[] { ',', ';', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries)
-                .Select(entry => entry.Trim())
-                .Where(entry => entry.Length > 0)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            _lastWaterEquipmentBlacklistRaw = raw;
+            return shortcut.MainKey != KeyCode.None && Input.GetKey(shortcut.MainKey) && shortcut.Modifiers.All(Input.GetKey);
         }
     }
-
 }

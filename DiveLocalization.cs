@@ -11,10 +11,6 @@ internal static class DiveLocalization
     internal const string DescendKey = "$divein_descend";
     internal const string AscendKey = "$divein_ascend";
 
-    private const string FastSwimOnWord = "divein_fast_swim_on";
-    private const string FastSwimOffWord = "divein_fast_swim_off";
-    private const string DescendWord = "divein_descend";
-    private const string AscendWord = "divein_ascend";
     private const string EnglishLanguage = "english";
 
     private static readonly DiveHintTranslation English = new("Fast Swim On", "Fast Swim Off", "Descend", "Ascend");
@@ -82,10 +78,10 @@ internal static class DiveLocalization
         }
 
         DiveHintTranslation translation = GetTranslation(NormalizeLanguageName(localization.GetSelectedLanguage()));
-        localization.AddWord(FastSwimOnWord, translation.FastSwimOn);
-        localization.AddWord(FastSwimOffWord, translation.FastSwimOff);
-        localization.AddWord(DescendWord, translation.Descend);
-        localization.AddWord(AscendWord, translation.Ascend);
+        localization.AddWord(FastSwimOnKey.Substring(1), translation.FastSwimOn);
+        localization.AddWord(FastSwimOffKey.Substring(1), translation.FastSwimOff);
+        localization.AddWord(DescendKey.Substring(1), translation.Descend);
+        localization.AddWord(AscendKey.Substring(1), translation.Ascend);
     }
 
     internal static string Localize(string key)

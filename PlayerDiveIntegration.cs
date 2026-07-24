@@ -36,19 +36,16 @@ internal static class PlayerDivePatches
         internal SwimmingStaminaState(
             PlayerDiveController? diver,
             float staminaBeforeVanillaSwim,
-            bool isMoving,
-            bool enteredSwimStaminaModifierContext)
+            bool isMoving)
         {
             Diver = diver;
             StaminaBeforeVanillaSwim = staminaBeforeVanillaSwim;
             IsMoving = isMoving;
-            EnteredSwimStaminaModifierContext = enteredSwimStaminaModifierContext;
         }
 
         internal PlayerDiveController? Diver { get; }
         internal float StaminaBeforeVanillaSwim { get; }
         internal bool IsMoving { get; }
-        internal bool EnteredSwimStaminaModifierContext { get; }
     }
 
     [ThreadStatic]
@@ -58,23 +55,15 @@ internal static class PlayerDivePatches
     [HarmonyPatch(typeof(Player), nameof(Player.Awake))]
     private static void PlayerAwakePostfix(Player __instance)
     {
-        if (__instance == Player.m_localPlayer)
-        {
-            _ = PlayerDiveUtils.EnsureLocalDiver();
-        }
+        _ = PlayerDiveUtils.TryGetLocalDiver(__instance, out _);
     }
 
     [HarmonyPrefix]
     [HarmonyPatch(typeof(Character), nameof(Character.UpdateMotion))]
     private static void CharacterUpdateMotionPrefix(Character __instance)
     {
-        if (__instance != Player.m_localPlayer)
-        {
-            return;
-        }
-
-        PlayerDiveController? diver = PlayerDiveUtils.EnsureLocalDiver();
-        if (diver == null)
+        if (__instance is not Player player ||
+            !PlayerDiveUtils.TryGetLocalDiver(player, out PlayerDiveController diver))
         {
             return;
         }
@@ -92,33 +81,27 @@ internal static class PlayerDivePatches
     [HarmonyPatch(typeof(Character), nameof(Character.UpdateSwimming))]
     private static void CharacterUpdateSwimmingPrefix(Character __instance, float dt, out SwimmingUpdateState __state)
     {
-        if (__instance != Player.m_localPlayer)
+        if (__instance is not Player player ||
+            !PlayerDiveUtils.TryGetLocalDiver(player, out PlayerDiveController diver))
         {
-            __state = new SwimmingUpdateState(null, null);
+            __state = default;
             return;
         }
 
-        PlayerDiveController? diver = PlayerDiveUtils.EnsureLocalDiver();
-        if (diver == null)
-        {
-            __state = new SwimmingUpdateState(null, null);
-            return;
-        }
-
-        diver.BeginSwimmingUpdateContext();
         __state = new SwimmingUpdateState(diver, null);
+        diver.BeginSwimmingUpdateContext();
 
         diver.UpdateSwimSpeed();
         bool movementSuppressedForCombat = diver.IsMovementSuppressedForCombat();
         if (!movementSuppressedForCombat && ServerSyncModTemplatePlugin.IsDiveAscendInputHeld() && diver.CanContinueAscending())
         {
-            diver.Dive(dt, ascend: true, out Vector3? originalMoveDir);
-            __state = new SwimmingUpdateState(diver, originalMoveDir);
+            __state = new SwimmingUpdateState(diver, __instance.m_moveDir);
+            diver.Dive(dt, ascend: true);
         }
         else if (!movementSuppressedForCombat && ServerSyncModTemplatePlugin.IsDiveDescendInputHeld() && diver.CanDive())
         {
-            diver.Dive(dt, ascend: false, out Vector3? originalMoveDir);
-            __state = new SwimmingUpdateState(diver, originalMoveDir);
+            __state = new SwimmingUpdateState(diver, __instance.m_moveDir);
+            diver.Dive(dt, ascend: false);
         }
         else if (__instance.IsOnGround() || !diver.IsDiving())
         {
@@ -131,12 +114,43 @@ internal static class PlayerDivePatches
     private static void CharacterUpdateSwimmingPostfix(Character __instance, float dt, ref SwimmingUpdateState __state)
     {
         __state.Diver?.UpdateSurfaceRotationLeveling(dt);
-        __state.Diver?.ResetSwimSpeedOverride();
-        __state.Diver?.EndSwimmingUpdateContext();
-        if (__state.OriginalMoveDir.HasValue)
+        RestoreSwimmingUpdateState(__instance, ref __state);
+    }
+
+    [HarmonyFinalizer]
+    [HarmonyPatch(typeof(Character), nameof(Character.UpdateSwimming))]
+    private static void CharacterUpdateSwimmingFinalizer(Character __instance, ref SwimmingUpdateState __state)
+    {
+        RestoreSwimmingUpdateState(__instance, ref __state);
+    }
+
+    private static void RestoreSwimmingUpdateState(Character instance, ref SwimmingUpdateState state)
+    {
+        PlayerDiveController? diver = state.Diver;
+        Vector3? originalMoveDir = state.OriginalMoveDir;
+        state = default;
+        if (diver == null)
         {
-            __instance.m_moveDir = __state.OriginalMoveDir.Value;
-            __state = default;
+            return;
+        }
+
+        try
+        {
+            diver.ResetSwimSpeedOverride();
+        }
+        finally
+        {
+            try
+            {
+                diver.EndSwimmingUpdateContext();
+            }
+            finally
+            {
+                if (originalMoveDir.HasValue && instance != null)
+                {
+                    instance.m_moveDir = originalMoveDir.Value;
+                }
+            }
         }
     }
 
@@ -144,14 +158,9 @@ internal static class PlayerDivePatches
     [HarmonyPatch(typeof(Character), nameof(Character.UpdateRotation))]
     private static void CharacterUpdateRotationPrefix(Character __instance, out Quaternion? __state)
     {
-        if (__instance != Player.m_localPlayer)
-        {
-            __state = null;
-            return;
-        }
-
-        PlayerDiveController? diver = PlayerDiveUtils.EnsureLocalDiver();
-        if (diver != null && diver.IsInSwimmingUpdateContext())
+        if (__instance is Player player &&
+            PlayerDiveUtils.TryGetLocalDiver(player, out PlayerDiveController diver) &&
+            diver.IsInSwimmingUpdateContext())
         {
             __state = __instance.transform.rotation;
             return;
@@ -164,30 +173,27 @@ internal static class PlayerDivePatches
     [HarmonyPatch(typeof(Character), nameof(Character.UpdateRotation))]
     private static void CharacterUpdateRotationPostfix(Character __instance, float turnSpeed, float dt, ref Quaternion? __state)
     {
-        if (!__state.HasValue || __instance == null || __instance != Player.m_localPlayer)
+        if (!__state.HasValue ||
+            __instance == null ||
+            __instance is not Player player ||
+            player.transform.rotation != __state.Value ||
+            !PlayerDiveUtils.TryGetLocalDiver(player, out PlayerDiveController diver))
         {
             return;
         }
 
-        if (__instance.transform.rotation != __state.Value)
-        {
-            return;
-        }
-
-        PlayerDiveController? diver = PlayerDiveUtils.EnsureLocalDiver();
-        if (diver == null
-            || !diver.IsInSwimmingUpdateContext()
+        if (!diver.IsInSwimmingUpdateContext()
             || !diver.IsUnderSurface())
         {
             return;
         }
 
-        Player player = diver.Player;
-        Quaternion targetRotation = player.AlwaysRotateCamera() || player.m_moveDir == Vector3.zero
-            ? player.m_lookYaw
-            : Quaternion.LookRotation(player.m_moveDir);
-        float effectiveSpeed = turnSpeed * player.GetAttackSpeedFactorRotation();
-        player.transform.rotation = Quaternion.RotateTowards(player.transform.rotation, targetRotation, effectiveSpeed * dt);
+        Player localPlayer = diver.Player;
+        Quaternion targetRotation = localPlayer.AlwaysRotateCamera() || localPlayer.m_moveDir == Vector3.zero
+            ? localPlayer.m_lookYaw
+            : Quaternion.LookRotation(localPlayer.m_moveDir);
+        float effectiveSpeed = turnSpeed * localPlayer.GetAttackSpeedFactorRotation();
+        localPlayer.transform.rotation = Quaternion.RotateTowards(localPlayer.transform.rotation, targetRotation, effectiveSpeed * dt);
     }
 
     [HarmonyPrefix]
@@ -195,13 +201,7 @@ internal static class PlayerDivePatches
     private static void PlayerOnSwimmingPrefix(Player __instance, Vector3 targetVel, float dt, out SwimmingStaminaState __state)
     {
         __state = default;
-        if (__instance != Player.m_localPlayer)
-        {
-            return;
-        }
-
-        PlayerDiveController? diver = PlayerDiveUtils.EnsureLocalDiver();
-        if (diver == null)
+        if (!PlayerDiveUtils.TryGetLocalDiver(__instance, out PlayerDiveController diver))
         {
             return;
         }
@@ -210,20 +210,18 @@ internal static class PlayerDivePatches
         diver.ApplyIdleMidwaterStaminaDrain(dt);
 
         bool isMoving = targetVel.magnitude >= 0.1f;
+        __state = new SwimmingStaminaState(diver, __instance.m_stamina, isMoving);
         if (isMoving)
         {
             BeginSwimStaminaModifierContext();
         }
-
-        __state = new SwimmingStaminaState(diver, __instance.m_stamina, isMoving, isMoving);
     }
 
     [HarmonyPostfix]
     [HarmonyPatch(typeof(Player), nameof(Player.OnSwimming))]
     private static void PlayerOnSwimmingPostfix(Player __instance, ref SwimmingStaminaState __state)
     {
-        if (__instance != Player.m_localPlayer
-            || __state.Diver == null
+        if (__state.Diver == null
             || !__state.IsMoving)
         {
             return;
@@ -236,7 +234,7 @@ internal static class PlayerDivePatches
     [HarmonyPatch(typeof(Player), nameof(Player.OnSwimming))]
     private static void PlayerOnSwimmingFinalizer(ref SwimmingStaminaState __state)
     {
-        if (__state.EnteredSwimStaminaModifierContext)
+        if (__state.IsMoving)
         {
             EndSwimStaminaModifierContext();
         }
@@ -305,8 +303,7 @@ internal static class PlayerDivePatches
     private static void PlayerUpdateStatsPrefix(Player __instance, out ResourceUpdateState __state)
     {
         __state = default;
-        if (__instance != Player.m_localPlayer ||
-            !PlayerDiveUtils.TryGetLocalDiver(__instance, out PlayerDiveController diver) ||
+        if (!PlayerDiveUtils.TryGetLocalDiver(__instance, out PlayerDiveController diver) ||
             !diver.ShouldTreatAsSwimming())
         {
             return;
@@ -324,7 +321,8 @@ internal static class PlayerDivePatches
             return;
         }
 
-        if (!SwimResourceAdjustments.TryGetGain(__state.Eitr, __instance.m_eitr, out float gainedEitr))
+        float gainedEitr = Mathf.Max(0f, __instance.m_eitr - __state.Eitr);
+        if (gainedEitr <= 0f)
         {
             return;
         }
@@ -337,11 +335,11 @@ internal static class PlayerDivePatches
             return;
         }
 
-        __instance.m_eitr = SwimResourceAdjustments.GetScaledGainValue(
-            __state.Eitr,
-            __instance.GetMaxEitr(),
-            gainedEitr,
-            regenRate);
+        float scaledGain = gainedEitr * Mathf.Clamp01(regenRate);
+        __instance.m_eitr = Mathf.Clamp(
+            __state.Eitr + scaledGain,
+            0f,
+            __instance.GetMaxEitr());
         if (__instance.m_nview != null && __instance.m_nview.IsValid())
         {
             __instance.m_nview.GetZDO().Set(ZDOVars.s_eitr, __instance.m_eitr);

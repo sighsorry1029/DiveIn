@@ -89,7 +89,7 @@ internal static class UnderwaterCombatPatches
 
     private static bool IsWaterRestrictedHiddenBlocker(ItemDrop.ItemData? item)
     {
-        return IsBlockableItem(item) && ServerSyncModTemplatePlugin.IsWaterRestrictedItem(item);
+        return IsBlockableItem(item) && WaterEquipmentPatches.IsWaterRestrictedItem(item);
     }
 
     private static bool IsBlockableItem(ItemDrop.ItemData? item)

@@ -45,7 +45,6 @@ public partial class ServerSyncModTemplatePlugin
     }
 
     private FileSystemWatcher _monsterDiveYamlWatcher = null!;
-    private DateTime _lastMonsterDiveYamlReloadTime;
     private static CustomSyncedValue<string> _monsterDiveYamlSync = null!;
     private static string? _lastAppliedMonsterDiveYamlText;
 
@@ -57,7 +56,7 @@ public partial class ServerSyncModTemplatePlugin
 
         if (ConfigSync.IsSourceOfTruth)
         {
-            LoadMonsterDiveYamlFromDisk(forceWriteDefaultIfMissing: true, syncToPeers: true, reason: "startup");
+            LoadMonsterDiveYamlFromDisk("startup");
             return;
         }
 
@@ -73,7 +72,6 @@ public partial class ServerSyncModTemplatePlugin
         _monsterDiveYamlWatcher.Changed += ReadMonsterDiveYamlValues;
         _monsterDiveYamlWatcher.Created += ReadMonsterDiveYamlValues;
         _monsterDiveYamlWatcher.Renamed += ReadMonsterDiveYamlValues;
-        _monsterDiveYamlWatcher.IncludeSubdirectories = true;
         _monsterDiveYamlWatcher.SynchronizingObject = ThreadingHelper.SynchronizingObject;
         _monsterDiveYamlWatcher.EnableRaisingEvents = true;
     }
@@ -100,13 +98,11 @@ public partial class ServerSyncModTemplatePlugin
 
     private void ReadMonsterDiveYamlValues(object sender, FileSystemEventArgs e)
     {
-        DateTime now = DateTime.Now;
-        if (now.Ticks - _lastMonsterDiveYamlReloadTime.Ticks < RELOAD_DELAY)
+        if (_isShuttingDown)
         {
             return;
         }
 
-        _lastMonsterDiveYamlReloadTime = now;
         lock (_reloadLock)
         {
             if (!ConfigSync.IsSourceOfTruth)
@@ -117,8 +113,12 @@ public partial class ServerSyncModTemplatePlugin
 
             try
             {
-                LoadMonsterDiveYamlFromDisk(forceWriteDefaultIfMissing: true, syncToPeers: true, reason: "yaml reload");
-                ServerSyncModTemplateLogger.LogInfo("Monster dive YAML reload complete.");
+                string? previouslyAppliedYamlText = _lastAppliedMonsterDiveYamlText;
+                if (LoadMonsterDiveYamlFromDisk("yaml reload") &&
+                    !string.Equals(previouslyAppliedYamlText, _lastAppliedMonsterDiveYamlText, StringComparison.Ordinal))
+                {
+                    ServerSyncModTemplateLogger.LogInfo("Monster dive YAML reload complete.");
+                }
             }
             catch (Exception ex)
             {
@@ -131,7 +131,7 @@ public partial class ServerSyncModTemplatePlugin
     {
         if (isSourceOfTruth)
         {
-            LoadMonsterDiveYamlFromDisk(forceWriteDefaultIfMissing: true, syncToPeers: true, reason: "source of truth changed to local");
+            LoadMonsterDiveYamlFromDisk("source of truth changed to local");
             return;
         }
 
@@ -156,17 +156,12 @@ public partial class ServerSyncModTemplatePlugin
         ApplyMonsterDiveYaml(_monsterDiveYamlSync.Value, "synced value changed");
     }
 
-    private void LoadMonsterDiveYamlFromDisk(bool forceWriteDefaultIfMissing, bool syncToPeers, string reason)
+    private bool LoadMonsterDiveYamlFromDisk(string reason)
     {
         lock (MonsterDiveYamlLock)
         {
             if (!File.Exists(MonsterDiveYamlFileFullPath))
             {
-                if (!forceWriteDefaultIfMissing)
-                {
-                    return;
-                }
-
                 string defaultYaml = BuildDefaultMonsterDiveYaml();
                 Directory.CreateDirectory(Paths.ConfigPath);
                 File.WriteAllText(MonsterDiveYamlFileFullPath, defaultYaml);
@@ -175,13 +170,15 @@ public partial class ServerSyncModTemplatePlugin
             string yamlText = File.ReadAllText(MonsterDiveYamlFileFullPath);
             if (!ApplyMonsterDiveYaml(yamlText, reason))
             {
-                return;
+                return false;
             }
 
-            if (syncToPeers && _monsterDiveYamlSync.Value != yamlText)
+            if (_monsterDiveYamlSync.Value != yamlText)
             {
                 _monsterDiveYamlSync.Value = yamlText;
             }
+
+            return true;
         }
     }
 
@@ -223,10 +220,19 @@ public partial class ServerSyncModTemplatePlugin
         {
             string groupName = groupEntry.Key;
             MonsterDiveYamlGroup group = groupEntry.Value;
-            PassiveDepthProfile passiveProfile = NormalizePassiveDepthProfile(groupName, group.PassiveMinDepth, group.PassiveCenterDepth, group.PassiveMaxDepth);
-            float activeMinDepth = NormalizeActiveMinDepth(groupName, group.ActiveMinDepth);
-            float activeDepthAdjustSpeed = NormalizeActiveDepthAdjustSpeed(groupName, group.ActiveDepthAdjustSpeed);
-            float shallowWaterFleeDepth = NormalizeShallowWaterFleeDepth(groupName, group.ShallowWaterFleeDepth);
+            if (!TryNormalizePassiveDepthProfile(
+                    groupName,
+                    group.PassiveMinDepth,
+                    group.PassiveCenterDepth,
+                    group.PassiveMaxDepth,
+                    out PassiveDepthProfile passiveProfile) ||
+                !TryNormalizeActiveMinDepth(groupName, group.ActiveMinDepth, out float activeMinDepth) ||
+                !TryNormalizeActiveDepthAdjustSpeed(groupName, group.ActiveDepthAdjustSpeed, out float activeDepthAdjustSpeed) ||
+                !TryNormalizeShallowWaterFleeDepth(groupName, group.ShallowWaterFleeDepth, out float shallowWaterFleeDepth))
+            {
+                return false;
+            }
+
             bool preserveSpawnDepth = group.PreserveSpawnDepth ?? DefaultPreserveSpawnDepth;
             bool avoidanceSteering = group.AvoidanceSteering ?? DefaultAvoidanceSteering;
             ConfiguredDiveProfile configuredDiveProfile = new(groupName, passiveProfile, activeMinDepth, activeDepthAdjustSpeed, shallowWaterFleeDepth, preserveSpawnDepth, avoidanceSteering);
@@ -242,73 +248,116 @@ public partial class ServerSyncModTemplatePlugin
         _lastAppliedMonsterDiveYamlText = yamlText;
 
         int restoredMonsterCount = RestoreRemovedMonsterDiveFlags();
-        ClearRuntimeCaches();
+        ClearSteeringMemory();
         ServerSyncModTemplateLogger.LogInfo(
             $"Loaded monster dive YAML ({reason}). passiveGroups={definedGroups.Count}, prefabs={configuredProfilesByPrefabName.Count}, active[defaultMin={DefaultActiveSwimDepthMin:F2}, max={ActiveSwimDepthMax:F2}, defaultAdjust={SwimDepthAdjustSpeed:F2}], shallowFleeDefault={DefaultShallowWaterFleeDepth:F2}, preserveSpawnDefault={DefaultPreserveSpawnDepth}, restoredRemovedInstances={restoredMonsterCount}.");
         return true;
     }
 
-    private static float NormalizeActiveMinDepth(string groupName, float? activeMinDepth)
+    private static bool TryNormalizeActiveMinDepth(
+        string groupName,
+        float? activeMinDepth,
+        out float normalizedMinDepth)
     {
         if (!activeMinDepth.HasValue)
         {
-            return DefaultActiveSwimDepthMin;
+            normalizedMinDepth = DefaultActiveSwimDepthMin;
+            return true;
         }
 
         float requestedMinDepth = activeMinDepth.Value;
-        float normalizedMinDepth = Mathf.Clamp(requestedMinDepth, 0f, ActiveSwimDepthMax);
+        if (!ValidateFiniteYamlNumber(groupName, "active_min_depth", requestedMinDepth))
+        {
+            normalizedMinDepth = default;
+            return false;
+        }
+
+        normalizedMinDepth = Mathf.Clamp(requestedMinDepth, 0f, ActiveSwimDepthMax);
         if (!Mathf.Approximately(requestedMinDepth, normalizedMinDepth))
         {
             ServerSyncModTemplateLogger.LogWarning(
                 $"Monster dive YAML normalized active profile '{groupName}': active_min_depth {requestedMinDepth.ToString("0.###", CultureInfo.InvariantCulture)} -> {normalizedMinDepth.ToString("0.###", CultureInfo.InvariantCulture)}.");
         }
 
-        return normalizedMinDepth;
+        return true;
     }
 
-    private static float NormalizeActiveDepthAdjustSpeed(string groupName, float? activeDepthAdjustSpeed)
+    private static bool TryNormalizeActiveDepthAdjustSpeed(
+        string groupName,
+        float? activeDepthAdjustSpeed,
+        out float normalizedAdjustSpeed)
     {
         if (!activeDepthAdjustSpeed.HasValue)
         {
-            return SwimDepthAdjustSpeed;
+            normalizedAdjustSpeed = SwimDepthAdjustSpeed;
+            return true;
         }
 
         float requestedAdjustSpeed = activeDepthAdjustSpeed.Value;
-        float normalizedAdjustSpeed = Mathf.Max(0f, requestedAdjustSpeed);
+        if (!ValidateFiniteYamlNumber(groupName, "active_depth_adjust_speed", requestedAdjustSpeed))
+        {
+            normalizedAdjustSpeed = default;
+            return false;
+        }
+
+        normalizedAdjustSpeed = Mathf.Max(0f, requestedAdjustSpeed);
         if (!Mathf.Approximately(normalizedAdjustSpeed, requestedAdjustSpeed))
         {
             ServerSyncModTemplateLogger.LogWarning(
                 $"Monster dive YAML normalized active profile '{groupName}': active_depth_adjust_speed {requestedAdjustSpeed.ToString("0.###", CultureInfo.InvariantCulture)} -> {normalizedAdjustSpeed.ToString("0.###", CultureInfo.InvariantCulture)}.");
         }
 
-        return normalizedAdjustSpeed;
+        return true;
     }
 
-    private static float NormalizeShallowWaterFleeDepth(string groupName, float? shallowWaterFleeDepth)
+    private static bool TryNormalizeShallowWaterFleeDepth(
+        string groupName,
+        float? shallowWaterFleeDepth,
+        out float normalizedFleeDepth)
     {
         if (!shallowWaterFleeDepth.HasValue)
         {
-            return DefaultShallowWaterFleeDepth;
+            normalizedFleeDepth = DefaultShallowWaterFleeDepth;
+            return true;
         }
 
         float requestedFleeDepth = shallowWaterFleeDepth.Value;
-        float normalizedFleeDepth = Mathf.Clamp(requestedFleeDepth, 0f, ActiveSwimDepthMax);
+        if (!ValidateFiniteYamlNumber(groupName, "shallow_water_flee_depth", requestedFleeDepth))
+        {
+            normalizedFleeDepth = default;
+            return false;
+        }
+
+        normalizedFleeDepth = Mathf.Clamp(requestedFleeDepth, 0f, ActiveSwimDepthMax);
         if (!Mathf.Approximately(requestedFleeDepth, normalizedFleeDepth))
         {
             ServerSyncModTemplateLogger.LogWarning(
                 $"Monster dive YAML normalized active profile '{groupName}': shallow_water_flee_depth {requestedFleeDepth.ToString("0.###", CultureInfo.InvariantCulture)} -> {normalizedFleeDepth.ToString("0.###", CultureInfo.InvariantCulture)}.");
         }
 
-        return normalizedFleeDepth;
+        return true;
     }
 
-    private static PassiveDepthProfile NormalizePassiveDepthProfile(string groupName, float minDepth, float centerDepth, float maxDepth)
+    private static bool TryNormalizePassiveDepthProfile(
+        string groupName,
+        float minDepth,
+        float centerDepth,
+        float maxDepth,
+        out PassiveDepthProfile passiveDepthProfile)
     {
+        if (!ValidateFiniteYamlNumber(groupName, "passive_min_depth", minDepth) ||
+            !ValidateFiniteYamlNumber(groupName, "passive_center_depth", centerDepth) ||
+            !ValidateFiniteYamlNumber(groupName, "passive_max_depth", maxDepth))
+        {
+            passiveDepthProfile = default;
+            return false;
+        }
+
         float requestedMin = minDepth;
         float requestedCenter = centerDepth;
         float requestedMax = maxDepth;
-        float normalizedMin = Mathf.Max(0f, requestedMin);
-        float normalizedMax = Mathf.Max(0f, requestedMax);
+        float normalizedMin = Mathf.Clamp(requestedMin, 0f, ActiveSwimDepthMax);
+        float normalizedMax = Mathf.Clamp(requestedMax, 0f, ActiveSwimDepthMax);
         if (normalizedMax < normalizedMin)
         {
             (normalizedMin, normalizedMax) = (normalizedMax, normalizedMin);
@@ -325,7 +374,20 @@ public partial class ServerSyncModTemplatePlugin
                 $"passive_max_depth {requestedMax.ToString("0.###", CultureInfo.InvariantCulture)} -> {normalizedMax.ToString("0.###", CultureInfo.InvariantCulture)}.");
         }
 
-        return new PassiveDepthProfile(normalizedCenter, normalizedMin, normalizedMax);
+        passiveDepthProfile = new PassiveDepthProfile(normalizedCenter, normalizedMin, normalizedMax);
+        return true;
+    }
+
+    private static bool ValidateFiniteYamlNumber(string groupName, string fieldName, float value)
+    {
+        if (!float.IsNaN(value) && !float.IsInfinity(value))
+        {
+            return true;
+        }
+
+        ServerSyncModTemplateLogger.LogError(
+            $"Monster dive YAML contains non-finite {fieldName} in profile '{groupName}'. Keeping previous settings.");
+        return false;
     }
 
     private static Dictionary<string, MonsterDiveYamlGroup> GetDefinedGroups(MonsterDiveYamlRoot root)

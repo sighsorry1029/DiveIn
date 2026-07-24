@@ -53,8 +53,7 @@ internal static class PlayerDiveUtils
     internal static bool TryGetUnderwaterLocalDiver(Player player, out PlayerDiveController diver)
     {
         diver = null!;
-        return IsValidLocalPlayer(player)
-               && TryGetLocalDiver(player, out diver)
+        return TryGetLocalDiver(player, out diver)
                && diver.ShouldTreatAsSwimming();
     }
 }
@@ -237,7 +236,10 @@ internal sealed class PlayerDiveController : MonoBehaviour
 
     internal void PrepareForcedSwimming()
     {
-        ClampSwimDepthForBottomContact();
+        Player.m_swimDepth = UnderwaterDepthUtils.ClampDepthAboveBottom(
+            Player,
+            Player.m_swimDepth,
+            _surfaceSwimDepth);
         Player.m_body.WakeUp();
         Player.m_lastGroundTouch = 0.3f;
         Player.m_swimTimer = 0f;
@@ -348,7 +350,8 @@ internal sealed class PlayerDiveController : MonoBehaviour
 
     internal void AdjustMovingSwimStaminaDrain(float staminaBeforeVanillaSwim)
     {
-        if (!SwimResourceAdjustments.TryGetDrain(staminaBeforeVanillaSwim, Player.m_stamina, out float vanillaDrain))
+        float vanillaDrain = Mathf.Max(0f, staminaBeforeVanillaSwim - Player.m_stamina);
+        if (vanillaDrain <= 0f)
         {
             return;
         }
@@ -359,11 +362,11 @@ internal sealed class PlayerDiveController : MonoBehaviour
             return;
         }
 
-        float targetStamina = SwimResourceAdjustments.GetScaledDrainValue(
-            staminaBeforeVanillaSwim,
-            Player.GetMaxStamina(),
-            vanillaDrain,
-            drainMultiplier);
+        float scaledDrain = vanillaDrain * Mathf.Max(0f, drainMultiplier);
+        float targetStamina = Mathf.Clamp(
+            staminaBeforeVanillaSwim - scaledDrain,
+            0f,
+            Player.GetMaxStamina());
         if (targetStamina < Player.m_stamina)
         {
             Player.UseStamina(Player.m_stamina - targetStamina);
@@ -378,8 +381,13 @@ internal sealed class PlayerDiveController : MonoBehaviour
         ResetSwimSpeedOverride();
         float skillSpeedMultiplier = GetSwimSkillSpeedMultiplier();
         float encumberedSpeedMultiplier = GetEncumberedSwimSpeedMultiplier();
-        float runSpeedMultiplier = GetSwimRunSpeedMultiplier();
-        _activeSwimRunStaminaDrainMultiplier = GetSwimRunStaminaDrainMultiplier();
+        bool fastSwimActive = IsFastSwimEnabled() && Player.HaveStamina();
+        float runSpeedMultiplier = fastSwimActive
+            ? Mathf.Max(1f, ServerSyncModTemplatePlugin._fastSwimSpeedMultiplier.Value)
+            : 1f;
+        _activeSwimRunStaminaDrainMultiplier = fastSwimActive
+            ? Mathf.Max(1f, ServerSyncModTemplatePlugin._fastSwimStaminaDrainMultiplier.Value)
+            : 1f;
 
         float speedMultiplier = skillSpeedMultiplier * encumberedSpeedMultiplier * runSpeedMultiplier;
         if (Mathf.Approximately(speedMultiplier, 1f))
@@ -422,29 +430,8 @@ internal sealed class PlayerDiveController : MonoBehaviour
         return Mathf.Clamp(ServerSyncModTemplatePlugin._encumberedSwimSpeedMultiplier.Value, 0.1f, 1f);
     }
 
-    private float GetSwimRunSpeedMultiplier()
+    internal void Dive(float dt, bool ascend)
     {
-        if (!IsFastSwimEnabled() || !Player.HaveStamina())
-        {
-            return 1f;
-        }
-
-        return Mathf.Max(1f, ServerSyncModTemplatePlugin._fastSwimSpeedMultiplier.Value);
-    }
-
-    private float GetSwimRunStaminaDrainMultiplier()
-    {
-        if (!IsFastSwimEnabled() || !Player.HaveStamina())
-        {
-            return 1f;
-        }
-
-        return Mathf.Max(1f, ServerSyncModTemplatePlugin._fastSwimStaminaDrainMultiplier.Value);
-    }
-
-    internal void Dive(float dt, bool ascend, out Vector3? defaultMoveDir)
-    {
-        defaultMoveDir = Player.m_moveDir;
         Player.m_moveDir = GetDiveDirection(ascend);
         if (ascend)
         {
@@ -538,11 +525,6 @@ internal sealed class PlayerDiveController : MonoBehaviour
         }
 
         Player.m_body.WakeUp();
-    }
-
-    private void ClampSwimDepthForBottomContact()
-    {
-        Player.m_swimDepth = UnderwaterDepthUtils.ClampDepthAboveBottom(Player, Player.m_swimDepth, _surfaceSwimDepth);
     }
 
     private Vector3 GetDiveDirection(bool ascend)

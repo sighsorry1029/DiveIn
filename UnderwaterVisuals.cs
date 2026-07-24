@@ -5,22 +5,32 @@ namespace ServerSyncModTemplate;
 
 internal static class UnderwaterVisualState
 {
+    private const float UnderwaterCameraMinWaterDistance = -5000f;
     private static float? _originalMinWaterDistance;
     private static GameCamera? _cameraWithOverride;
+    private static float _appliedMinWaterDistance;
     private static bool _fogOverrideActive;
     private static Color _originalFogColor;
     private static float _originalFogDensity;
+    private static Color _appliedFogColor;
+    private static float _appliedFogDensity;
 
     internal static void ApplyCameraOverride(GameCamera gameCamera)
     {
-        float minWaterDistanceOverride = ServerSyncModTemplatePlugin.GetUnderwaterCameraMinWaterDistance();
-        if (!_originalMinWaterDistance.HasValue)
+        if (_cameraWithOverride != gameCamera)
         {
+            ResetCamera();
             _originalMinWaterDistance = gameCamera.m_minWaterDistance;
             _cameraWithOverride = gameCamera;
         }
+        else if (_originalMinWaterDistance.HasValue
+                 && !gameCamera.m_minWaterDistance.Equals(_appliedMinWaterDistance))
+        {
+            _originalMinWaterDistance = gameCamera.m_minWaterDistance;
+        }
 
-        gameCamera.m_minWaterDistance = minWaterDistanceOverride;
+        _appliedMinWaterDistance = UnderwaterCameraMinWaterDistance;
+        gameCamera.m_minWaterDistance = _appliedMinWaterDistance;
     }
 
     internal static void ApplyFogOverride(PlayerDiveController diver)
@@ -36,42 +46,59 @@ internal static class UnderwaterVisualState
             return;
         }
 
+        Color currentFogColor = RenderSettings.fogColor;
+        float currentFogDensity = RenderSettings.fogDensity;
         if (!_fogOverrideActive)
         {
-            _originalFogColor = RenderSettings.fogColor;
-            _originalFogDensity = RenderSettings.fogDensity;
+            _originalFogColor = currentFogColor;
+            _originalFogDensity = currentFogDensity;
             _fogOverrideActive = true;
         }
+        else
+        {
+            if (!currentFogColor.Equals(_appliedFogColor))
+            {
+                _originalFogColor = currentFogColor;
+            }
 
-        Color waterColor = !EnvMan.IsNight() ? currentEnvironment.m_fogColorDay : currentEnvironment.m_fogColorNight;
+            if (!currentFogDensity.Equals(_appliedFogDensity))
+            {
+                _originalFogDensity = currentFogDensity;
+            }
+        }
+
+        bool isNight = EnvMan.IsNight();
+        Color waterColor = !isNight ? currentEnvironment.m_fogColorDay : currentEnvironment.m_fogColorNight;
         waterColor.a = 1f;
-        float darknessAmount = GetUnderwaterDarknessAmount(diver.Player.m_swimDepth);
-        float brightnessMultiplier = Mathf.Clamp01(1f - darknessAmount);
-        waterColor = ApplyBrightnessMultiplier(waterColor, brightnessMultiplier);
-        RenderSettings.fogColor = waterColor;
-
-        float fogDensity = GetEnvironmentFogDensity(currentEnvironment) + (diver.Player.m_swimDepth * ServerSyncModTemplatePlugin.GetUnderwaterVisibilityFalloff());
-        RenderSettings.fogDensity = Mathf.Max(0f, fogDensity);
+        float brightnessMultiplier = 1f - Mathf.Clamp01(
+            diver.Player.m_swimDepth * ServerSyncModTemplatePlugin.GetUnderwaterDarknessFactor());
+        _appliedFogColor = new Color(
+            waterColor.r * brightnessMultiplier,
+            waterColor.g * brightnessMultiplier,
+            waterColor.b * brightnessMultiplier,
+            waterColor.a);
+        _appliedFogDensity = Mathf.Max(
+            0f,
+            (!isNight ? currentEnvironment.m_fogDensityDay : currentEnvironment.m_fogDensityNight)
+            + (diver.Player.m_swimDepth * ServerSyncModTemplatePlugin.GetUnderwaterVisibilityFalloff()));
+        RenderSettings.fogColor = _appliedFogColor;
+        RenderSettings.fogDensity = _appliedFogDensity;
     }
 
     internal static void ResetAll()
     {
-        ResetCameraAndFog();
-        UnderwaterSurfaceRenderer.ResetAll();
-    }
-
-    internal static void ResetCameraAndFog()
-    {
         ResetCamera();
         ResetFog();
+        UnderwaterSurfaceRenderer.ResetAll();
     }
 
     internal static void ResetCamera()
     {
-        GameCamera? camera = _cameraWithOverride != null ? _cameraWithOverride : GameCamera.instance;
-        if (camera != null && _originalMinWaterDistance.HasValue)
+        if (_cameraWithOverride != null
+            && _originalMinWaterDistance.HasValue
+            && _cameraWithOverride.m_minWaterDistance.Equals(_appliedMinWaterDistance))
         {
-            camera.m_minWaterDistance = _originalMinWaterDistance.Value;
+            _cameraWithOverride.m_minWaterDistance = _originalMinWaterDistance.Value;
         }
 
         _originalMinWaterDistance = null;
@@ -85,25 +112,17 @@ internal static class UnderwaterVisualState
             return;
         }
 
+        if (RenderSettings.fogColor.Equals(_appliedFogColor))
+        {
+            RenderSettings.fogColor = _originalFogColor;
+        }
+
+        if (RenderSettings.fogDensity.Equals(_appliedFogDensity))
+        {
+            RenderSettings.fogDensity = _originalFogDensity;
+        }
+
         _fogOverrideActive = false;
-        RenderSettings.fogColor = _originalFogColor;
-        RenderSettings.fogDensity = _originalFogDensity;
-    }
-
-    private static float GetUnderwaterDarknessAmount(float swimDepth)
-    {
-        return Mathf.Clamp01(swimDepth * ServerSyncModTemplatePlugin.GetUnderwaterDarknessFactor());
-    }
-
-    private static Color ApplyBrightnessMultiplier(Color color, float brightnessMultiplier)
-    {
-        float clampedBrightness = Mathf.Clamp01(brightnessMultiplier);
-        return new Color(color.r * clampedBrightness, color.g * clampedBrightness, color.b * clampedBrightness, color.a);
-    }
-
-    private static float GetEnvironmentFogDensity(EnvSetup environment)
-    {
-        return !EnvMan.IsNight() ? environment.m_fogDensityDay : environment.m_fogDensityNight;
     }
 }
 
@@ -111,13 +130,6 @@ internal static class UnderwaterVisualState
 internal static class UnderwaterCameraPatches
 {
     private const float UnderwaterCameraSurfaceClearance = 1f;
-
-    private enum VisualMode
-    {
-        Disabled,
-        Surface,
-        Underwater
-    }
 
     private static bool ShouldUseUnderwaterVisuals(PlayerDiveController diver)
     {
@@ -178,110 +190,90 @@ internal static class UnderwaterCameraPatches
         gameCamera.m_waterClipping = true;
     }
 
-    private static VisualMode GetVisualMode(GameCamera? gameCamera, out PlayerDiveController? diver, out Camera? camera)
+    private static PlayerDiveController? GetVisualDiver(
+        GameCamera? gameCamera,
+        PlayerDiveController? diver)
     {
-        diver = null;
-        camera = null;
-        if (gameCamera == null || !ServerSyncModTemplatePlugin.IsUnderwaterVisualStylingEnabled())
+        if (gameCamera == null || gameCamera.m_camera == null)
         {
-            return VisualMode.Disabled;
+            return null;
         }
 
-        diver = PlayerDiveUtils.EnsureLocalDiver();
-        camera = gameCamera.m_camera;
         if (diver == null
-            || camera == null
             || !ShouldUseUnderwaterVisuals(diver)
             || !ShouldAllowUnderwaterCamera(diver))
         {
-            return VisualMode.Disabled;
+            return null;
         }
 
-        return IsCameraUnderwater(camera, diver) ? VisualMode.Underwater : VisualMode.Surface;
-    }
-
-    private static void ApplyCameraVisualMode(
-        GameCamera gameCamera,
-        VisualMode mode,
-        PlayerDiveController? diver,
-        bool beforeCameraUpdate)
-    {
-        if (beforeCameraUpdate)
-        {
-            UnderwaterSurfaceRenderer.ResetStale();
-            if (mode == VisualMode.Disabled)
-            {
-                UnderwaterVisualState.ResetAll();
-                return;
-            }
-
-            UnderwaterVisualState.ApplyCameraOverride(gameCamera);
-            return;
-        }
-
-        if (mode == VisualMode.Disabled || diver == null)
-        {
-            UnderwaterVisualState.ResetAll();
-            return;
-        }
-
-        if (mode == VisualMode.Surface)
-        {
-            UnderwaterVisualState.ResetFog();
-            UnderwaterSurfaceRenderer.ResetAll();
-            return;
-        }
-
-        UnderwaterVisualState.ApplyCameraOverride(gameCamera);
-        UnderwaterVisualState.ApplyFogOverride(diver);
-    }
-
-    private static bool ShouldRenderUnderwaterSurface(WaterVolume? waterVolume)
-    {
-        if (waterVolume == null || waterVolume.m_waterSurface == null)
-        {
-            UnderwaterSurfaceRenderer.Reset(waterVolume);
-            return false;
-        }
-
-        if (GetVisualMode(GameCamera.instance, out _, out _) != VisualMode.Underwater)
-        {
-            UnderwaterSurfaceRenderer.Reset(waterVolume);
-            return false;
-        }
-
-        return true;
+        return diver;
     }
 
     [HarmonyPrefix]
     [HarmonyPatch(typeof(GameCamera), nameof(GameCamera.UpdateCamera))]
     private static void GameCameraUpdateCameraPrefix(GameCamera __instance)
     {
-        ApplyCameraVisualMode(
-            __instance,
-            GetVisualMode(__instance, out PlayerDiveController? diver, out _),
-            diver,
-            beforeCameraUpdate: true);
+        UnderwaterSurfaceRenderer.ResetStale();
+        PlayerDiveController? diver = __instance.m_camera != null
+            ? PlayerDiveUtils.EnsureLocalDiver()
+            : null;
+        if (GetVisualDiver(__instance, diver) == null)
+        {
+            UnderwaterVisualState.ResetAll();
+            return;
+        }
+
+        UnderwaterVisualState.ApplyCameraOverride(__instance);
     }
 
     [HarmonyPostfix]
     [HarmonyPatch(typeof(GameCamera), nameof(GameCamera.UpdateCamera))]
     private static void GameCameraUpdateCameraPostfix(GameCamera __instance)
     {
-        ClampSubmergedCameraBelowSurface(__instance, PlayerDiveUtils.EnsureLocalDiver());
-        ApplyCameraVisualMode(
-            __instance,
-            GetVisualMode(__instance, out PlayerDiveController? diver, out _),
-            diver,
-            beforeCameraUpdate: false);
+        Camera? camera = __instance.m_camera;
+        PlayerDiveController? diver = camera != null
+            ? PlayerDiveUtils.EnsureLocalDiver()
+            : null;
+        ClampSubmergedCameraBelowSurface(__instance, diver);
+        diver = GetVisualDiver(__instance, diver);
+        if (diver == null || camera == null)
+        {
+            UnderwaterVisualState.ResetAll();
+            return;
+        }
+
+        if (!IsCameraUnderwater(camera, diver))
+        {
+            UnderwaterVisualState.ResetFog();
+            UnderwaterSurfaceRenderer.ResetAll();
+            return;
+        }
+
+        UnderwaterVisualState.ApplyCameraOverride(__instance);
+        UnderwaterVisualState.ApplyFogOverride(diver);
     }
 
     [HarmonyPrefix]
     [HarmonyPatch(typeof(WaterVolume), nameof(WaterVolume.UpdateMaterials))]
     private static void WaterVolumeUpdateMaterialsPrefix(WaterVolume __instance)
     {
-        if (!ShouldRenderUnderwaterSurface(__instance))
+        if (__instance.m_waterSurface == null)
         {
+            UnderwaterSurfaceRenderer.Reset(__instance);
+            return;
+        }
+
+        GameCamera? gameCamera = GameCamera.instance;
+        Camera? camera = gameCamera != null ? gameCamera.m_camera : null;
+        PlayerDiveController? diver = camera != null
+            ? PlayerDiveUtils.EnsureLocalDiver()
+            : null;
+        diver = GetVisualDiver(gameCamera, diver);
+        if (camera == null
+            || diver == null
+            || !IsCameraUnderwater(camera, diver))
+        {
+            UnderwaterSurfaceRenderer.Reset(__instance);
             return;
         }
 

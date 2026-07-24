@@ -13,7 +13,7 @@ public partial class ServerSyncModTemplatePlugin
     private const float SteeringMemorySeconds = 0.1f;
     private const float SteeringMemoryDistance = 1f;
     private const float PreferredSteerAngleMax = 70f;
-    private const int AvoidanceSampleCount = 8;
+    private const float MaximumSteeringLookaheadDistance = 6f;
     private static readonly float[] SteerAngles = { 0f, -35f, 35f, -70f, 70f, -120f, 120f, 180f };
     private static readonly Dictionary<int, SteeringMemoryEntry> SteeringMemory = new();
 
@@ -37,11 +37,13 @@ public partial class ServerSyncModTemplatePlugin
     {
         public readonly bool HasRoute;
         public readonly Vector3 Direction;
+        public readonly float LookaheadDistance;
 
-        public UnderwaterNavigationPlan(bool hasRoute, Vector3 direction)
+        public UnderwaterNavigationPlan(bool hasRoute, Vector3 direction, float lookaheadDistance)
         {
             HasRoute = hasRoute;
             Direction = direction;
+            LookaheadDistance = lookaheadDistance;
         }
     }
 
@@ -68,7 +70,7 @@ public partial class ServerSyncModTemplatePlugin
         return x * x + z * z <= SteeringMemoryDistance * SteeringMemoryDistance;
     }
 
-    private static void ClearRuntimeCaches()
+    private static void ClearSteeringMemory()
     {
         SteeringMemory.Clear();
     }
@@ -93,15 +95,13 @@ public partial class ServerSyncModTemplatePlugin
             : profile.CenterDepth + wave * surfaceAmplitude;
     }
 
-    private static float GetActiveSwimDepthMin(ConfiguredDiveProfile profile)
+    private static SwimDepthGoal CalculateSwimDepthGoal(
+        MonsterAI monsterAI,
+        Character character,
+        Vector3 point,
+        ConfiguredDiveProfile configuredDiveProfile)
     {
-        return Mathf.Clamp(profile.ActiveMinDepth, 0f, ActiveSwimDepthMax);
-    }
-
-    private static SwimDepthGoal CalculateSwimDepthGoal(MonsterAI monsterAI, Character character, Vector3 point)
-    {
-        TryGetConfiguredDiveProfile(monsterAI, out ConfiguredDiveProfile configuredDiveProfile);
-        float activeSwimDepthMin = GetActiveSwimDepthMin(configuredDiveProfile);
+        float activeSwimDepthMin = Mathf.Clamp(configuredDiveProfile.ActiveMinDepth, 0f, ActiveSwimDepthMax);
         float liquidLevel = character.GetLiquidLevel();
         bool passiveDive = IsPassiveDiveState(monsterAI);
         float desiredDepth;
@@ -122,7 +122,7 @@ public partial class ServerSyncModTemplatePlugin
         }
 
         float unclampedBottomDepth = desiredDepth;
-        desiredDepth = ClampSwimDepthForBottomContact(character, desiredDepth, activeSwimDepthMin);
+        desiredDepth = UnderwaterDepthUtils.ClampDepthAboveBottom(character, desiredDepth, activeSwimDepthMin);
         requestedOutsideRange |= desiredDepth < unclampedBottomDepth - 0.001f;
 
         float clampedTargetY = liquidLevel - desiredDepth;
@@ -141,24 +141,22 @@ public partial class ServerSyncModTemplatePlugin
         character.m_swimDepth = Mathf.MoveTowards(character.m_swimDepth, goal.DesiredDepth, step);
     }
 
-    private static float ClampSwimDepthForBottomContact(Character character, float desiredDepth, float minimumDepth)
-    {
-        return UnderwaterDepthUtils.ClampDepthAboveBottom(character, desiredDepth, minimumDepth);
-    }
-
-    private static UnderwaterNavigationPlan BuildUnderwaterNavigationPlan(BaseAI ai, Character character, Vector3 targetPoint)
+    private static UnderwaterNavigationPlan BuildUnderwaterNavigationPlan(
+        BaseAI ai,
+        Character character,
+        Vector3 targetPoint,
+        ConfiguredDiveProfile profile)
     {
         int instanceId = ai.GetInstanceID();
         Vector3 currentPosition = ai.transform.position;
-        if (ai is MonsterAI configuredMonster &&
-            TryGetConfiguredDiveProfile(configuredMonster, out ConfiguredDiveProfile profile) &&
-            !profile.AvoidanceSteering)
+        if (!profile.AvoidanceSteering)
         {
             SteeringMemory.Remove(instanceId);
             Vector3 directDirection = targetPoint - currentPosition;
             return new UnderwaterNavigationPlan(
                 hasRoute: true,
-                directDirection.sqrMagnitude > 0.0001f ? directDirection.normalized : Vector3.zero);
+                directDirection.sqrMagnitude > 0.0001f ? directDirection.normalized : Vector3.zero,
+                Mathf.Min(directDirection.magnitude, MaximumSteeringLookaheadDistance));
         }
 
         float now = Time.time;
@@ -214,30 +212,32 @@ public partial class ServerSyncModTemplatePlugin
     {
         selectedAngle = 0f;
         Vector3 desiredDir = targetPoint - ai.transform.position;
+        float targetDistance = desiredDir.magnitude;
         if (desiredDir.sqrMagnitude <= 0.0001f)
         {
-            return new UnderwaterNavigationPlan(hasRoute: true, Vector3.zero);
+            return new UnderwaterNavigationPlan(hasRoute: true, Vector3.zero, lookaheadDistance: 0f);
         }
 
         desiredDir.Normalize();
         Vector3 horizontal = new(desiredDir.x, 0f, desiredDir.z);
         float radius = character.GetRadius();
         float horizontalDistance = Utils.DistanceXZ(targetPoint, ai.transform.position);
-        float checkDistance = Mathf.Clamp(horizontalDistance, radius + 1f, 6f);
+        float checkDistance = Mathf.Clamp(horizontalDistance, radius + 1f, MaximumSteeringLookaheadDistance);
+        // The obstacle-probe endpoint is this navigator's local equivalent of vanilla's current path waypoint.
+        float lookaheadDistance = Mathf.Min(targetDistance, checkDistance);
 
         if (horizontalDistance <= radius + 0.6f)
         {
-            return new UnderwaterNavigationPlan(hasRoute: true, desiredDir);
+            return new UnderwaterNavigationPlan(hasRoute: true, desiredDir, lookaheadDistance);
         }
 
         if (horizontal.sqrMagnitude <= 0.0001f)
         {
-            return new UnderwaterNavigationPlan(hasRoute: true, desiredDir);
+            return new UnderwaterNavigationPlan(hasRoute: true, desiredDir, lookaheadDistance);
         }
 
         horizontal.Normalize();
         Vector3 center = character.GetCenterPoint();
-        int sampleCount = Mathf.Clamp(AvoidanceSampleCount, 3, SteerAngles.Length);
         Vector3 bestHorizontal = horizontal;
         bool bestHasRoute = false;
         float bestScore = float.NegativeInfinity;
@@ -255,13 +255,13 @@ public partial class ServerSyncModTemplatePlugin
                 ref selectedAngle,
                 out _))
         {
-            return new UnderwaterNavigationPlan(hasRoute: true, desiredDir);
+            return new UnderwaterNavigationPlan(hasRoute: true, desiredDir, lookaheadDistance);
         }
 
         bool foundClearRoute = false;
         if (preferredSide != 0f)
         {
-            for (int i = 1; i < sampleCount; ++i)
+            for (int i = 1; i < SteerAngles.Length; ++i)
             {
                 float angle = SteerAngles[i];
                 if (!IsPreferredSteerAngle(angle, preferredSide))
@@ -295,7 +295,7 @@ public partial class ServerSyncModTemplatePlugin
 
         if (!foundClearRoute)
         {
-            for (int i = 1; i < sampleCount; ++i)
+            for (int i = 1; i < SteerAngles.Length; ++i)
             {
                 float angle = SteerAngles[i];
                 if (preferredSide != 0f && IsPreferredSteerAngle(angle, preferredSide))
@@ -328,7 +328,7 @@ public partial class ServerSyncModTemplatePlugin
 
         Vector3 steer = new(bestHorizontal.x, desiredDir.y, bestHorizontal.z);
         Vector3 result = steer.sqrMagnitude > 0.0001f ? steer.normalized : desiredDir;
-        return new UnderwaterNavigationPlan(bestHasRoute, result);
+        return new UnderwaterNavigationPlan(bestHasRoute, result, lookaheadDistance);
     }
 
     private static bool IsPreferredSteerAngle(float angle, float preferredSide)

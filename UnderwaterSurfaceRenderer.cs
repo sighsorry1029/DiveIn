@@ -34,7 +34,6 @@ internal static class UnderwaterSurfaceRenderer
         }
 
         state.Apply();
-        ApplyWaterMaterialProperties(state);
     }
 
     internal static void Reset(WaterVolume? volume)
@@ -44,33 +43,24 @@ internal static class UnderwaterSurfaceRenderer
             return;
         }
 
-        if (!SurfaceStates.TryGetValue(volume.GetInstanceID(), out UnderwaterSurfaceState? state))
+        int volumeId = volume.GetInstanceID();
+        if (!SurfaceStates.TryGetValue(volumeId, out UnderwaterSurfaceState? state))
         {
             return;
         }
 
         state.Restore();
-        SurfaceStates.Remove(volume.GetInstanceID());
+        SurfaceStates.Remove(volumeId);
     }
 
     internal static void ResetAll()
     {
-        if (SurfaceStates.Count == 0)
+        foreach (UnderwaterSurfaceState state in SurfaceStates.Values)
         {
-            return;
+            state.Restore();
         }
 
-        SurfaceIdsToReset.Clear();
-        foreach (int volumeId in SurfaceStates.Keys)
-        {
-            SurfaceIdsToReset.Add(volumeId);
-        }
-
-        foreach (int volumeId in SurfaceIdsToReset)
-        {
-            RestoreAndRemove(volumeId);
-        }
-
+        SurfaceStates.Clear();
         SurfaceIdsToReset.Clear();
     }
 
@@ -110,74 +100,52 @@ internal static class UnderwaterSurfaceRenderer
         SurfaceStates.Remove(volumeId);
     }
 
-    private static void ApplyWaterMaterialProperties(UnderwaterSurfaceState state)
-    {
-        Material? material = state.GetWaterMaterial();
-        if (material == null)
-        {
-            return;
-        }
-
-        if (material.HasProperty(DepthPropertyId))
-        {
-            if (state.Volume.m_forceDepth >= 0f)
-            {
-                material.SetFloatArray(DepthPropertyId, state.GetUniformDepthArray(state.Volume.m_forceDepth));
-            }
-            else
-            {
-                material.SetFloatArray(DepthPropertyId, state.GetFlippedDepthArray(state.Volume.m_normalizedDepth));
-            }
-        }
-
-        if (material.HasProperty(UseGlobalWindPropertyId))
-        {
-            material.SetFloat(UseGlobalWindPropertyId, state.Volume.m_useGlobalWind ? 1f : 0f);
-        }
-    }
-
     private sealed class UnderwaterSurfaceState
     {
         public UnderwaterSurfaceState(WaterVolume volume)
         {
             Volume = volume;
-            SurfaceTransform = volume.m_waterSurface.transform;
-            Renderer = volume.m_waterSurface.GetComponent<MeshRenderer>();
+            Renderer = volume.m_waterSurface;
+            SurfaceTransform = Renderer.transform;
             OriginalPosition = SurfaceTransform.position;
             OriginalRotation = SurfaceTransform.rotation;
-            OriginalShadowCastingMode = volume.m_waterSurface.shadowCastingMode;
+            OriginalShadowCastingMode = Renderer.shadowCastingMode;
+            WaterMaterial = Renderer.material;
         }
 
         public WaterVolume Volume { get; }
         public Transform SurfaceTransform { get; }
-        public MeshRenderer? Renderer { get; }
+        public MeshRenderer Renderer { get; }
+        private Material? WaterMaterial { get; }
         public Vector3 OriginalPosition { get; }
         public Quaternion OriginalRotation { get; }
         public ShadowCastingMode OriginalShadowCastingMode { get; }
         public int LastAppliedFrame { get; private set; } = Time.frameCount;
         private readonly float[] _underwaterDepth = new float[4];
+        private bool _depthOverrideActive;
+        private float[]? _originalDepth;
+        private bool _globalWindOverrideActive;
+        private float _originalUseGlobalWind;
+        private float _lastAppliedUseGlobalWind;
 
         public bool CanRender()
         {
             return Volume != null
-                   && Volume.m_waterSurface != null
                    && SurfaceTransform != null
-                   && Renderer != null;
+                   && Renderer != null
+                   && Volume.m_waterSurface == Renderer
+                   && object.ReferenceEquals(Renderer.material, WaterMaterial);
         }
 
         public void Apply()
         {
-            if (!CanRender())
-            {
-                return;
-            }
-
             LastAppliedFrame = Time.frameCount;
             Vector3 position = SurfaceTransform.position;
             SurfaceTransform.SetPositionAndRotation(
                 new Vector3(position.x, OriginalPosition.y, position.z),
                 OriginalRotation * Quaternion.Euler(180f, 0f, 0f));
-            Volume.m_waterSurface.shadowCastingMode = ShadowCastingMode.TwoSided;
+            Renderer.shadowCastingMode = ShadowCastingMode.TwoSided;
+            ApplyWaterMaterialProperties();
         }
 
         public void Restore()
@@ -190,12 +158,12 @@ internal static class UnderwaterSurfaceRenderer
                     OriginalRotation);
             }
 
-            if (Volume != null && Volume.m_waterSurface != null)
+            if (Renderer != null)
             {
-                Volume.m_waterSurface.shadowCastingMode = OriginalShadowCastingMode;
+                Renderer.shadowCastingMode = OriginalShadowCastingMode;
             }
 
-            RestoreWaterMaterialProperties(this);
+            RestoreWaterMaterialProperties();
         }
 
         public bool ShouldResetAsStale(int currentFrame, int maxFrameAge)
@@ -203,44 +171,117 @@ internal static class UnderwaterSurfaceRenderer
             return !CanRender() || currentFrame - LastAppliedFrame > maxFrameAge;
         }
 
-        public Material? GetWaterMaterial()
+        private void ApplyWaterMaterialProperties()
         {
-            return Renderer != null ? Renderer.material : null;
+            if (WaterMaterial == null)
+            {
+                return;
+            }
+
+            if (WaterMaterial.HasProperty(DepthPropertyId))
+            {
+                float[]? currentDepth = WaterMaterial.GetFloatArray(DepthPropertyId);
+                if (currentDepth == null)
+                {
+                    _depthOverrideActive = false;
+                    _originalDepth = null;
+                }
+                else
+                {
+                    if (!_depthOverrideActive || !FloatArraysEqual(currentDepth, _underwaterDepth))
+                    {
+                        _originalDepth = currentDepth;
+                    }
+
+                    if (Volume.m_forceDepth >= 0f)
+                    {
+                        _underwaterDepth[0] = Volume.m_forceDepth;
+                        _underwaterDepth[1] = Volume.m_forceDepth;
+                        _underwaterDepth[2] = Volume.m_forceDepth;
+                        _underwaterDepth[3] = Volume.m_forceDepth;
+                    }
+                    else
+                    {
+                        _underwaterDepth[0] = Volume.m_normalizedDepth[3];
+                        _underwaterDepth[1] = Volume.m_normalizedDepth[2];
+                        _underwaterDepth[2] = Volume.m_normalizedDepth[1];
+                        _underwaterDepth[3] = Volume.m_normalizedDepth[0];
+                    }
+
+                    WaterMaterial.SetFloatArray(DepthPropertyId, _underwaterDepth);
+                    _depthOverrideActive = true;
+                }
+            }
+
+            if (WaterMaterial.HasProperty(UseGlobalWindPropertyId))
+            {
+                float currentUseGlobalWind = WaterMaterial.GetFloat(UseGlobalWindPropertyId);
+                if (!_globalWindOverrideActive || !currentUseGlobalWind.Equals(_lastAppliedUseGlobalWind))
+                {
+                    _originalUseGlobalWind = currentUseGlobalWind;
+                }
+
+                _lastAppliedUseGlobalWind = Volume.m_useGlobalWind ? 1f : 0f;
+                WaterMaterial.SetFloat(UseGlobalWindPropertyId, _lastAppliedUseGlobalWind);
+                _globalWindOverrideActive = true;
+            }
         }
 
-        public float[] GetUniformDepthArray(float depth)
+        private void RestoreWaterMaterialProperties()
         {
-            _underwaterDepth[0] = depth;
-            _underwaterDepth[1] = depth;
-            _underwaterDepth[2] = depth;
-            _underwaterDepth[3] = depth;
-            return _underwaterDepth;
+            if (WaterMaterial == null)
+            {
+                _depthOverrideActive = false;
+                _globalWindOverrideActive = false;
+                return;
+            }
+
+            if (_depthOverrideActive
+                && _originalDepth != null
+                && WaterMaterial.HasProperty(DepthPropertyId))
+            {
+                float[]? currentDepth = WaterMaterial.GetFloatArray(DepthPropertyId);
+                if (FloatArraysEqual(currentDepth, _underwaterDepth))
+                {
+                    WaterMaterial.SetFloatArray(DepthPropertyId, _originalDepth);
+                }
+            }
+
+            if (_globalWindOverrideActive && WaterMaterial.HasProperty(UseGlobalWindPropertyId))
+            {
+                float currentUseGlobalWind = WaterMaterial.GetFloat(UseGlobalWindPropertyId);
+                if (currentUseGlobalWind.Equals(_lastAppliedUseGlobalWind))
+                {
+                    WaterMaterial.SetFloat(UseGlobalWindPropertyId, _originalUseGlobalWind);
+                }
+            }
+
+            _depthOverrideActive = false;
+            _originalDepth = null;
+            _globalWindOverrideActive = false;
         }
 
-        public float[] GetFlippedDepthArray(float[] depth)
+        private static bool FloatArraysEqual(float[]? left, float[]? right)
         {
-            _underwaterDepth[0] = depth[3];
-            _underwaterDepth[1] = depth[2];
-            _underwaterDepth[2] = depth[1];
-            _underwaterDepth[3] = depth[0];
-            return _underwaterDepth;
-        }
-    }
+            if (object.ReferenceEquals(left, right))
+            {
+                return true;
+            }
 
-    private static void RestoreWaterMaterialProperties(UnderwaterSurfaceState state)
-    {
-        Material? material = state.GetWaterMaterial();
-        if (material == null || !material.HasProperty(DepthPropertyId))
-        {
-            return;
-        }
+            if (left == null || right == null || left.Length != right.Length)
+            {
+                return false;
+            }
 
-        if (state.Volume.m_forceDepth >= 0f)
-        {
-            material.SetFloatArray(DepthPropertyId, state.GetUniformDepthArray(state.Volume.m_forceDepth));
-            return;
-        }
+            for (int index = 0; index < left.Length; index++)
+            {
+                if (!left[index].Equals(right[index]))
+                {
+                    return false;
+                }
+            }
 
-        material.SetFloatArray(DepthPropertyId, state.Volume.m_normalizedDepth);
+            return true;
+        }
     }
 }
