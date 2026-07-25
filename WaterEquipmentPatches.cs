@@ -204,33 +204,31 @@ internal static class WaterEquipmentPatches
 
         object swimmingBranchTarget = codeMatcher.InstructionAt(2).operand;
         object groundBranchTarget = codeMatcher.InstructionAt(5).operand;
-        if (swimmingBranchTarget is not Label target
-            || groundBranchTarget is not Label
-            || !swimmingBranchTarget.Equals(groundBranchTarget))
-        {
-            ServerSyncModTemplatePlugin.ServerSyncModTemplateLogger.LogWarning(
-                $"Swimming item restriction in {methodName} does not use the expected common branch target. Water equipment bypass for this method is disabled; vanilla swimming restrictions remain.");
-            return false;
-        }
-
-        bool targetExists = false;
-        foreach (CodeInstruction instruction in code)
-        {
-            if (instruction.labels.Contains(target))
-            {
-                targetExists = true;
-                break;
-            }
-        }
-
-        if (!targetExists)
+        if (swimmingBranchTarget is not Label swimmingTarget
+            || groundBranchTarget is not Label groundTarget)
         {
             ServerSyncModTemplatePlugin.ServerSyncModTemplateLogger.LogWarning(
                 $"Swimming item restriction branch target in {methodName} could not be resolved. Water equipment bypass for this method is disabled; vanilla swimming restrictions remain.");
             return false;
         }
 
-        branchTarget = target;
+        int swimmingTargetIndex = code.FindIndex(instruction => instruction.labels.Contains(swimmingTarget));
+        int groundTargetIndex = code.FindIndex(instruction => instruction.labels.Contains(groundTarget));
+        if (swimmingTargetIndex < 0 || groundTargetIndex < 0)
+        {
+            ServerSyncModTemplatePlugin.ServerSyncModTemplateLogger.LogWarning(
+                $"Swimming item restriction branch target in {methodName} could not be resolved. Water equipment bypass for this method is disabled; vanilla swimming restrictions remain.");
+            return false;
+        }
+
+        if (swimmingTargetIndex != groundTargetIndex)
+        {
+            ServerSyncModTemplatePlugin.ServerSyncModTemplateLogger.LogWarning(
+                $"Swimming item restriction in {methodName} does not use the expected common branch target. Water equipment bypass for this method is disabled; vanilla swimming restrictions remain.");
+            return false;
+        }
+
+        branchTarget = swimmingTarget;
         codeMatcher.Advance(SwimmingRestrictionPattern.Length);
         if (!codeMatcher.IsValid)
         {

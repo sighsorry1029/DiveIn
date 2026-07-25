@@ -2,6 +2,7 @@
 
 ## 1.1.9
 
+- Fixed swimming equipment bypass being disabled by a false branch-target validation failure, which caused repeated startup warnings and left vanilla swimming restrictions active.
 - Changed the synchronized Water Equipment Blacklist to preserve restrictions per listed item: listed armor and accessories no longer stow unrelated hand equipment, while listed hand items retain vanilla hand-item hiding.
 - Improved shallow-water flee behavior so configured creatures keep retreating until they clear the exit-depth buffer without skipping vanilla sleep, riding, event, or despawn processing.
 - Restored vanilla serpent stopping distance and swoop movement while using bounded local steering lookahead for smoother underwater pursuit.
