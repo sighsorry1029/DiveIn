@@ -61,6 +61,7 @@ internal static class PlayerDiveUtils
 internal sealed class PlayerDiveController : MonoBehaviour
 {
     private const float HeadUnderwaterTolerance = 0.01f;
+    private const float NoLiquidLevel = -10000f;
     private const float MinimumSurfaceSwimDepth = 0.1f;
     private const float SurfaceExitClearance = 0.1f;
     private const float DivingSwimDepthOffset = 1.1f;
@@ -75,6 +76,8 @@ internal sealed class PlayerDiveController : MonoBehaviour
     private float _originalSwimSpeed;
     private float _activeSwimRunStaminaDrainMultiplier = 1f;
     private float _combatMovementSuppressedUntilTime;
+    private bool _waterTeleportTransitionActive;
+    private float _waterTeleportLevel = NoLiquidLevel;
     private int _swimmingUpdateContextDepth;
     private int _swimmingUpdateContextFrame = -1;
 
@@ -110,6 +113,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
 
     internal void DisableUnderwaterMovement()
     {
+        ClearWaterTeleportTransition();
         _underwaterMovementActive = false;
         _fastSwimEnabled = false;
         _surfaceRotationLevelingActive = false;
@@ -117,12 +121,118 @@ internal sealed class PlayerDiveController : MonoBehaviour
         ResetSwimSpeedOverride();
     }
 
+    internal void BeginWaterTeleportTransition()
+    {
+        _waterTeleportTransitionActive = true;
+        RefreshWaterTeleportLevel();
+        _ = TryRestoreSubmergedTeleportState();
+    }
+
+    internal void UpdateWaterTeleportTransition()
+    {
+        if (Player.IsTeleporting())
+        {
+            _waterTeleportTransitionActive = true;
+            RefreshWaterTeleportLevel();
+            _ = TryRestoreSubmergedTeleportState();
+            return;
+        }
+
+        if (!_waterTeleportTransitionActive)
+        {
+            return;
+        }
+
+        RefreshWaterTeleportLevel();
+        if (TryRestoreSubmergedTeleportState())
+        {
+            if (Player.InWater())
+            {
+                ClearWaterTeleportTransition();
+            }
+
+            return;
+        }
+
+        DisableUnderwaterMovement();
+    }
+
     internal void ResetSwimDepthIfNotInWater()
     {
+        if (_waterTeleportTransitionActive || Player.IsTeleporting())
+        {
+            return;
+        }
+
         if (!Player.InWater())
         {
             DisableUnderwaterMovement();
         }
+    }
+
+    internal bool TryGetSubmergedTeleportWaterLevel(out float waterLevel)
+    {
+        waterLevel = NoLiquidLevel;
+        if (!_waterTeleportTransitionActive && !Player.IsTeleporting())
+        {
+            return false;
+        }
+
+        if (_waterTeleportLevel <= NoLiquidLevel)
+        {
+            return false;
+        }
+
+        Vector3 playerPosition = Player.transform.position;
+        float eyeY = Player.m_eye != null ? Player.m_eye.position.y : playerPosition.y;
+        if (_waterTeleportLevel - eyeY <= HeadUnderwaterTolerance)
+        {
+            return false;
+        }
+
+        float physicalDepth = _waterTeleportLevel - playerPosition.y;
+        if (!IsUnderSurface()
+            && physicalDepth <= _surfaceSwimDepth + DivingSwimDepthOffset)
+        {
+            return false;
+        }
+
+        waterLevel = _waterTeleportLevel;
+        return true;
+    }
+
+    private void RefreshWaterTeleportLevel()
+    {
+        // InWater is forced false while teleporting, so query the live WaterVolume instead of Character caches.
+        _waterTeleportLevel = Floating.GetLiquidLevel(
+            Player.transform.position,
+            1f,
+            LiquidType.Water);
+    }
+
+    private void ClearWaterTeleportTransition()
+    {
+        _waterTeleportTransitionActive = false;
+        _waterTeleportLevel = NoLiquidLevel;
+    }
+
+    private bool TryRestoreSubmergedTeleportState()
+    {
+        if (!TryGetSubmergedTeleportWaterLevel(out float waterLevel))
+        {
+            return false;
+        }
+
+        float physicalDepth = waterLevel - Player.transform.position.y;
+        Player.m_swimDepth = UnderwaterDepthUtils.ClampDepthAboveBottom(
+            Player,
+            physicalDepth,
+            _surfaceSwimDepth);
+        _surfaceExitSwimDepth = null;
+        _surfaceRotationLevelingActive = false;
+
+        _underwaterMovementActive = true;
+        return true;
     }
 
     internal void ResetSwimDepthToDefault()
@@ -160,6 +270,11 @@ internal sealed class PlayerDiveController : MonoBehaviour
 
     internal void RefreshUnderwaterMovementState()
     {
+        if (_waterTeleportTransitionActive || Player.IsTeleporting())
+        {
+            return;
+        }
+
         if (!Player.InWater() || !IsHeadUnderwater())
         {
             _underwaterMovementActive = false;

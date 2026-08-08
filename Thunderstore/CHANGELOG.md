@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0
+
+- Fixed underwater dungeon teleports briefly moving the camera above the water surface during entry and leaving it there after returning to a submerged exit.
+- Preserved underwater transition state with live WaterVolume checks while Valheim temporarily clears its cached liquid depth, then restored swimming at the destination's actual depth instead of forcing the player toward the surface.
+- Rebased underwater-to-underwater teleports on the destination depth and cleared transition state at dry destinations so stale swim depth and visual overrides do not carry across portals.
+
 ## 1.1.9
 
 - Fixed swimming equipment bypass being disabled by a false branch-target validation failure, which caused repeated startup warnings and left vanilla swimming restrictions active.

@@ -58,6 +58,20 @@ internal static class PlayerDivePatches
         _ = PlayerDiveUtils.TryGetLocalDiver(__instance, out _);
     }
 
+    [HarmonyPostfix]
+    [HarmonyPatch(
+        typeof(Player),
+        nameof(Player.TeleportTo),
+        new[] { typeof(Vector3), typeof(Quaternion), typeof(bool) })]
+    private static void PlayerTeleportToPostfix(Player __instance, bool __result)
+    {
+        if (__result
+            && PlayerDiveUtils.TryGetLocalDiver(__instance, out PlayerDiveController diver))
+        {
+            diver.BeginWaterTeleportTransition();
+        }
+    }
+
     [HarmonyPrefix]
     [HarmonyPatch(typeof(Character), nameof(Character.UpdateMotion))]
     private static void CharacterUpdateMotionPrefix(Character __instance)
@@ -68,6 +82,7 @@ internal static class PlayerDivePatches
             return;
         }
 
+        diver.UpdateWaterTeleportTransition();
         diver.ResetSwimDepthIfNotInWater();
         diver.RefreshUnderwaterMovementState();
         diver.UpdateFastSwimInput();
