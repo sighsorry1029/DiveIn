@@ -122,6 +122,7 @@ internal static class UnderwaterSurfaceRenderer
         public ShadowCastingMode OriginalShadowCastingMode { get; }
         public int LastAppliedFrame { get; private set; } = Time.frameCount;
         private readonly float[] _underwaterDepth = new float[4];
+        private readonly List<float> _currentDepth = new(4);
         private bool _depthOverrideActive;
         private float[]? _originalDepth;
         private bool _globalWindOverrideActive;
@@ -180,17 +181,22 @@ internal static class UnderwaterSurfaceRenderer
 
             if (WaterMaterial.HasProperty(DepthPropertyId))
             {
-                float[]? currentDepth = WaterMaterial.GetFloatArray(DepthPropertyId);
-                if (currentDepth == null)
+                WaterMaterial.GetFloatArray(DepthPropertyId, _currentDepth);
+                if (_currentDepth.Count == 0)
                 {
                     _depthOverrideActive = false;
                     _originalDepth = null;
                 }
                 else
                 {
-                    if (!_depthOverrideActive || !FloatArraysEqual(currentDepth, _underwaterDepth))
+                    if (!_depthOverrideActive || !DepthValuesEqual(_currentDepth, _underwaterDepth))
                     {
-                        _originalDepth = currentDepth;
+                        if (_originalDepth == null || _originalDepth.Length != _currentDepth.Count)
+                        {
+                            _originalDepth = new float[_currentDepth.Count];
+                        }
+
+                        _currentDepth.CopyTo(_originalDepth);
                     }
 
                     if (Volume.m_forceDepth >= 0f)
@@ -240,8 +246,8 @@ internal static class UnderwaterSurfaceRenderer
                 && _originalDepth != null
                 && WaterMaterial.HasProperty(DepthPropertyId))
             {
-                float[]? currentDepth = WaterMaterial.GetFloatArray(DepthPropertyId);
-                if (FloatArraysEqual(currentDepth, _underwaterDepth))
+                WaterMaterial.GetFloatArray(DepthPropertyId, _currentDepth);
+                if (DepthValuesEqual(_currentDepth, _underwaterDepth))
                 {
                     WaterMaterial.SetFloatArray(DepthPropertyId, _originalDepth);
                 }
@@ -261,21 +267,16 @@ internal static class UnderwaterSurfaceRenderer
             _globalWindOverrideActive = false;
         }
 
-        private static bool FloatArraysEqual(float[]? left, float[]? right)
+        private static bool DepthValuesEqual(List<float> currentDepth, float[] expectedDepth)
         {
-            if (object.ReferenceEquals(left, right))
-            {
-                return true;
-            }
-
-            if (left == null || right == null || left.Length != right.Length)
+            if (currentDepth.Count != expectedDepth.Length)
             {
                 return false;
             }
 
-            for (int index = 0; index < left.Length; index++)
+            for (int index = 0; index < currentDepth.Count; index++)
             {
-                if (!left[index].Equals(right[index]))
+                if (!currentDepth[index].Equals(expectedDepth[index]))
                 {
                     return false;
                 }

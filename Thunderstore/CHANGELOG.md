@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.1
+
+- Fixed additional moving swim stamina drain applying the global stamina-use multiplier twice when it differs from 1, while preserving vanilla stamina-use hooks and regeneration delay.
+- Applied underwater projectile penalties only to the initial launch. Child projectiles created through `Projectile.SpawnOnHit` keep the parent spawn logic's values without another DiveIn multiplier, preventing repeated damage and speed reductions down the chain.
+- Fixed drawing hidden hand equipment while input is blocked by chat, inventory, menus, or teleporting, and skipped item-name lookups when the water equipment blacklist is empty.
+- Reduced repeated key-hint formatting and underwater surface-material array allocations, and removed duplicate water-state checks within the camera postfix while preserving transition and restoration guards.
+- Avoided unnecessary monster prefab lookups outside water and stopped unrelated player configuration reloads from resetting monster steering memory.
+- Fixed English key-hint fallback for Valheim's unregistered localization-key format.
+
 ## 1.2.0
 
 - Fixed underwater dungeon teleports briefly moving the camera above the water surface during entry and leaving it there after returning to a submerged exit.

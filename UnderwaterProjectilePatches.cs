@@ -1,3 +1,4 @@
+using System;
 using HarmonyLib;
 using UnityEngine;
 
@@ -6,6 +7,36 @@ namespace ServerSyncModTemplate;
 [HarmonyPatch]
 internal static class UnderwaterProjectilePatches
 {
+    [ThreadStatic]
+    private static int _playerProjectileSpawnOnHitDepth;
+
+    [HarmonyPrefix]
+    [HarmonyPatch(typeof(Projectile), nameof(Projectile.SpawnOnHit), new[] { typeof(GameObject), typeof(Collider), typeof(Vector3) })]
+    private static void ProjectileSpawnOnHitPrefix(Projectile __instance, out bool __state)
+    {
+        __state = __instance != null && __instance.m_owner is Player;
+        if (__state)
+        {
+            _playerProjectileSpawnOnHitDepth++;
+        }
+    }
+
+    [HarmonyFinalizer]
+    [HarmonyPatch(typeof(Projectile), nameof(Projectile.SpawnOnHit), new[] { typeof(GameObject), typeof(Collider), typeof(Vector3) })]
+    private static void ProjectileSpawnOnHitFinalizer(ref bool __state)
+    {
+        if (!__state)
+        {
+            return;
+        }
+
+        __state = false;
+        if (_playerProjectileSpawnOnHitDepth > 0)
+        {
+            _playerProjectileSpawnOnHitDepth--;
+        }
+    }
+
     [HarmonyPostfix]
     [HarmonyPatch(typeof(Projectile), nameof(Projectile.Setup))]
     private static void ProjectileSetupPostfix(Projectile __instance, Character owner)
@@ -20,7 +51,9 @@ internal static class UnderwaterProjectilePatches
 
     private static bool ShouldApplyUnderwaterPenalty(Projectile projectile, Character? owner)
     {
+        // SpawnOnHit passes launch data to descendants; only the original launch receives the penalty.
         return projectile != null
+               && _playerProjectileSpawnOnHitDepth == 0
                && ServerSyncModTemplatePlugin.HasPlayerProjectileUnderwaterPenalty()
                && IsLocallyOwnedProjectile(projectile)
                && IsPlayerOwnedProjectile(projectile, owner)

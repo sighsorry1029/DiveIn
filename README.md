@@ -17,7 +17,7 @@ Normally, creatures cannot follow a diving player far below the surface. DiveIn 
 - Swim skill and encumbrance have independent speed multipliers.
 - Surface swimming retains the vanilla swim depth; DiveIn changes depth only while diving.
 - Attacking, secondary attacking, and guarding temporarily take priority over swim movement.
-- Player-owned underwater projectiles can use synchronized lifetime, speed, and damage multipliers.
+- Player-owned underwater projectiles can use synchronized lifetime, speed, and damage multipliers on the initial launch. Child projectiles spawned by `Projectile.SpawnOnHit` keep the parent spawn logic's values without another DiveIn multiplier, so inherited damage and speed are not repeatedly reduced down the chain.
 - Equipment is usable in water by default; a synchronized prefab blacklist keeps restrictions on listed items without propagating armor or accessory entries to hand equipment. Listed hand items retain vanilla hand-item hiding.
 - Swimming key hints use the active keyboard or gamepad bindings and supported Valheim languages.
 

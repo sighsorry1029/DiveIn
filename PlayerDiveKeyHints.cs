@@ -67,9 +67,7 @@ internal static class PlayerDiveKeyHints
         public DiveHintCell(GameObject root)
         {
             Root = root;
-            TMP_Text[] texts = root
-                .GetComponentsInChildren<TMP_Text>(true)
-                .ToArray();
+            TMP_Text[] texts = root.GetComponentsInChildren<TMP_Text>(true);
 
             Key = FindKeyText(texts);
             Label = FindLabelText(texts, Key);

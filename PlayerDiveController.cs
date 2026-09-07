@@ -484,7 +484,11 @@ internal sealed class PlayerDiveController : MonoBehaviour
             Player.GetMaxStamina());
         if (targetStamina < Player.m_stamina)
         {
-            Player.UseStamina(Player.m_stamina - targetStamina);
+            float extraDrain = Player.m_stamina - targetStamina;
+            // The observed drain already includes this rate; UseStamina applies it again.
+            // Keep UseStamina's hooks, ownership handling and regen delay for the extra cost.
+            float staminaRate = Game.m_staminaRate;
+            Player.UseStamina(staminaRate > 0f ? extraDrain / staminaRate : extraDrain);
             return;
         }
 

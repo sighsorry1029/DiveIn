@@ -105,26 +105,32 @@ public partial class ServerSyncModTemplatePlugin
         return TryGetConfiguredDiveProfile(monsterAI, out _);
     }
 
-    private static bool TryGetConfiguredMonster(
+    private static bool TryGetConfiguredWaterDiveMonster(
         BaseAI ai,
         out MonsterAI monsterAI,
+        out Character character,
         out ConfiguredDiveProfile configuredDiveProfile)
     {
-        if (ai is MonsterAI typedMonster &&
-            TryGetConfiguredDiveProfile(typedMonster, out configuredDiveProfile))
+        if (ai is MonsterAI typedMonster && typedMonster)
         {
-            monsterAI = typedMonster;
-            return true;
+            Character monsterCharacter = typedMonster.m_character;
+            if (ShouldUseWaterDiveMode(monsterCharacter) &&
+                TryGetConfiguredDiveProfile(typedMonster, out configuredDiveProfile))
+            {
+                monsterAI = typedMonster;
+                character = monsterCharacter;
+                return true;
+            }
         }
 
         monsterAI = null!;
+        character = null!;
         configuredDiveProfile = default;
         return false;
     }
 
-    private static bool ShouldUseWaterDiveMode(MonsterAI monsterAI)
+    private static bool ShouldUseWaterDiveMode(Character character)
     {
-        Character character = monsterAI.m_character;
         if (character == null)
         {
             return false;
@@ -216,7 +222,7 @@ public partial class ServerSyncModTemplatePlugin
 
         int instanceId = monsterAI.GetInstanceID();
         bool wasFleeing = ShallowWaterFleeingByInstance.Contains(instanceId);
-        if (!ShouldUseWaterDiveMode(monsterAI))
+        if (!ShouldUseWaterDiveMode(monsterAI.m_character))
         {
             ShallowWaterFleeingByInstance.Remove(instanceId);
             return false;
@@ -350,7 +356,7 @@ public partial class ServerSyncModTemplatePlugin
 
     private static void EnsureAvoidLandForCurrentDiveState(MonsterAI monsterAI)
     {
-        bool underwaterMode = ShouldUseWaterDiveMode(monsterAI);
+        bool underwaterMode = ShouldUseWaterDiveMode(monsterAI.m_character);
         if (underwaterMode)
         {
             if (monsterAI.m_avoidLand)

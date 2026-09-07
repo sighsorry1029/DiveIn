@@ -90,12 +90,15 @@ internal static class WaterEquipmentPatches
 
     private static bool ShouldForceShowHiddenHandItems(Player player)
     {
-        return WasHideInputPressed(player) && CanForceShowHiddenHandItems(player);
+        return PlayerDiveUtils.IsValidLocalPlayer(player)
+               && WasHideInputPressed(player)
+               && CanForceShowHiddenHandItems(player);
     }
 
     private static bool CanForceShowHiddenHandItems(Player player)
     {
         return PlayerDiveUtils.TryGetUnderwaterLocalDiver(player, out _)
+               && player.TakeInput()
                && !player.IsOnGround()
                && !player.InDodge()
                && player.GetRightItem() == null
@@ -128,6 +131,11 @@ internal static class WaterEquipmentPatches
         }
 
         RefreshBlacklistIfNeeded();
+        if (_blacklist.Count == 0)
+        {
+            return false;
+        }
+
         string prefabName = Utils.GetPrefabName(item.m_dropPrefab);
         return !string.IsNullOrEmpty(prefabName) && _blacklist.Contains(prefabName);
     }

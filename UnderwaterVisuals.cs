@@ -158,13 +158,13 @@ internal static class UnderwaterCameraPatches
         return camera.transform.position.y < waterLevel;
     }
 
-    private static void ClampSubmergedCameraBelowSurface(GameCamera gameCamera, PlayerDiveController? diver)
+    private static void ClampSubmergedCameraBelowSurface(
+        GameCamera gameCamera,
+        PlayerDiveController diver,
+        float waterLevel)
     {
         Camera? camera = gameCamera.m_camera;
-        if (diver == null
-            || camera == null
-            || diver.Player.m_eye == null
-            || !TryGetVisualWaterLevel(diver, out float waterLevel))
+        if (camera == null || diver.Player.m_eye == null)
         {
             return;
         }
@@ -245,7 +245,6 @@ internal static class UnderwaterCameraPatches
         PlayerDiveController? diver = camera != null
             ? PlayerDiveUtils.EnsureLocalDiver()
             : null;
-        ClampSubmergedCameraBelowSurface(__instance, diver);
         diver = GetVisualDiver(__instance, diver, out float waterLevel);
         if (diver == null || camera == null)
         {
@@ -253,6 +252,7 @@ internal static class UnderwaterCameraPatches
             return;
         }
 
+        ClampSubmergedCameraBelowSurface(__instance, diver, waterLevel);
         if (!IsCameraUnderwater(camera, waterLevel))
         {
             UnderwaterVisualState.ResetFog();

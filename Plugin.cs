@@ -15,7 +15,7 @@ namespace ServerSyncModTemplate;
 public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
 {
     internal const string ModName = "DiveIn";
-    internal const string ModVersion = "1.2.0";
+    internal const string ModVersion = "1.2.1";
     internal const string Author = "sighsorry";
     private const string ModGUID = $"{Author}.{ModName}";
 
@@ -184,7 +184,6 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
                 SaveWithRespectToConfigSet(reload: true);
                 _lastConfigFileText = ReadFileTextIfExists(ConfigFileFullPath);
                 UnderwaterVisualState.ResetAll();
-                ClearSteeringMemory();
                 ServerSyncModTemplateLogger.LogInfo("Configuration reload complete.");
             }
             catch (Exception ex)

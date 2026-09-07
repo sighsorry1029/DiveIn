@@ -92,7 +92,13 @@ internal static class DiveLocalization
         }
 
         string localized = Localization.instance.Localize(key);
-        return localized.Contains("$") ? GetEnglishText(key) : localized;
+        // Valheim renders an unregistered $word as [word]. Compare without allocating a fallback marker.
+        bool missingKey = key.StartsWith("$", StringComparison.Ordinal)
+                          && localized.Length == key.Length + 1
+                          && localized[0] == '['
+                          && localized[localized.Length - 1] == ']'
+                          && string.CompareOrdinal(localized, 1, key, 1, key.Length - 1) == 0;
+        return missingKey || localized.Contains("$") ? GetEnglishText(key) : localized;
     }
 
     private static DiveHintTranslation GetTranslation(string languageName)

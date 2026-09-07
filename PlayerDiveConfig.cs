@@ -38,6 +38,8 @@ public partial class ServerSyncModTemplatePlugin
     internal static ConfigEntry<KeyboardShortcut> _playerDiveDescendShortcut = null!;
     internal static ConfigEntry<float> _underwaterDarknessFactor = null!;
     internal static ConfigEntry<float> _underwaterVisibilityFalloff = null!;
+    private static (KeyboardShortcut Shortcut, string Text)? _ascendKeyHint;
+    private static (KeyboardShortcut Shortcut, string Text)? _descendKeyHint;
 
     private sealed class ConfigurationManagerAttributes
     {
@@ -168,7 +170,7 @@ public partial class ServerSyncModTemplatePlugin
             "Player Projectile Underwater TTL Multiplier",
             0.5f,
             new ConfigDescription(
-                "Multiplier applied once to player-owned projectiles when they are fired underwater. 1 keeps vanilla lifetime; lower values shorten underwater range.",
+                "Lifetime multiplier applied to the initial player-owned projectile when fired underwater. Spawned child projectiles keep their own lifetime without another DiveIn multiplier. 1 keeps vanilla lifetime; lower values shorten underwater range.",
                 new AcceptableValueRange<float>(0.05f, 1f),
                 new ConfigurationManagerAttributes { Order = 110 }));
         _playerProjectileUnderwaterSpeedMultiplier = config(
@@ -176,7 +178,7 @@ public partial class ServerSyncModTemplatePlugin
             "Player Projectile Underwater Speed Multiplier",
             0.5f,
             new ConfigDescription(
-                "Multiplier applied once to player-owned projectile velocity when fired underwater. 1 keeps vanilla speed; lower values slow underwater projectiles.",
+                "Velocity multiplier applied to the initial player-owned projectile when fired underwater. Spawned child projectiles keep the velocity from the parent spawn logic without another DiveIn multiplier. 1 keeps vanilla speed; lower values slow underwater projectiles.",
                 new AcceptableValueRange<float>(0.05f, 1f),
                 new ConfigurationManagerAttributes { Order = 109 }));
         _playerProjectileUnderwaterDamageMultiplier = config(
@@ -184,7 +186,7 @@ public partial class ServerSyncModTemplatePlugin
             "Player Projectile Underwater Damage Multiplier",
             0.5f,
             new ConfigDescription(
-                "Multiplier applied once to player-owned projectile damage when fired underwater. 1 keeps vanilla damage; 0 removes projectile damage underwater.",
+                "Damage multiplier applied to the initial player-owned projectile when fired underwater. Inherited hit data keeps this multiplier; spawned child projectiles do not apply it again. 1 keeps vanilla damage; 0 removes the initial projectile's damage underwater.",
                 new AcceptableValueRange<float>(0f, 1f),
                 new ConfigurationManagerAttributes { Order = 108 }));
         _playerDiveAscendShortcut = config(
@@ -298,7 +300,9 @@ public partial class ServerSyncModTemplatePlugin
             return GetBoundKeyHint("JoyJump", "A");
         }
 
-        return FormatShortcutForKeyHint(_playerDiveAscendShortcut?.Value ?? new KeyboardShortcut(KeyCode.Space));
+        return FormatShortcutForKeyHint(
+            _playerDiveAscendShortcut?.Value ?? new KeyboardShortcut(KeyCode.Space),
+            ref _ascendKeyHint);
     }
 
     internal static string GetDiveDescendKeyHint()
@@ -308,7 +312,9 @@ public partial class ServerSyncModTemplatePlugin
             return GetBoundKeyHint("JoyCrouch", "B");
         }
 
-        return FormatShortcutForKeyHint(_playerDiveDescendShortcut?.Value ?? new KeyboardShortcut(KeyCode.LeftControl));
+        return FormatShortcutForKeyHint(
+            _playerDiveDescendShortcut?.Value ?? new KeyboardShortcut(KeyCode.LeftControl),
+            ref _descendKeyHint);
     }
 
     internal static string GetDiveRunKeyHint()
@@ -335,10 +341,18 @@ public partial class ServerSyncModTemplatePlugin
         return Localization.instance != null ? Localization.instance.Localize(keyHint) : keyHint;
     }
 
-    private static string FormatShortcutForKeyHint(KeyboardShortcut shortcut)
+    private static string FormatShortcutForKeyHint(
+        KeyboardShortcut shortcut,
+        ref (KeyboardShortcut Shortcut, string Text)? cache)
     {
+        if (cache.HasValue && shortcut.Equals(cache.Value.Shortcut))
+        {
+            return cache.Value.Text;
+        }
+
         if (shortcut.MainKey == KeyCode.None)
         {
+            cache = (shortcut, "None");
             return "None";
         }
 
@@ -347,7 +361,9 @@ public partial class ServerSyncModTemplatePlugin
             .Select(FormatKeyCodeForHint)
             .ToList();
         keys.Add(FormatKeyCodeForHint(shortcut.MainKey));
-        return string.Join(" + ", keys);
+        string text = string.Join(" + ", keys);
+        cache = (shortcut, text);
+        return text;
     }
 
     private static string FormatKeyCodeForHint(KeyCode key)

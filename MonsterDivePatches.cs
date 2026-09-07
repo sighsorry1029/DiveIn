@@ -82,17 +82,11 @@ public partial class ServerSyncModTemplatePlugin
     {
         private static bool Prefix(BaseAI __instance, Vector3 target, ref bool __result)
         {
-            if (!TryGetConfiguredMonster(
+            if (!TryGetConfiguredWaterDiveMonster(
                     __instance,
-                    out MonsterAI monsterAI,
-                    out ConfiguredDiveProfile configuredDiveProfile) ||
-                !ShouldUseWaterDiveMode(monsterAI))
-            {
-                return true;
-            }
-
-            Character character = monsterAI.m_character;
-            if (character == null)
+                    out _,
+                    out Character character,
+                    out ConfiguredDiveProfile configuredDiveProfile))
             {
                 return true;
             }
@@ -107,17 +101,11 @@ public partial class ServerSyncModTemplatePlugin
     {
         private static bool Prefix(BaseAI __instance, float dt, Vector3 point, float dist, bool run, ref bool __result)
         {
-            if (!TryGetConfiguredMonster(
+            if (!TryGetConfiguredWaterDiveMonster(
                     __instance,
                     out MonsterAI monsterAI,
-                    out ConfiguredDiveProfile configuredDiveProfile) ||
-                !ShouldUseWaterDiveMode(monsterAI))
-            {
-                return true;
-            }
-
-            Character character = monsterAI.m_character;
-            if (character == null)
+                    out Character character,
+                    out ConfiguredDiveProfile configuredDiveProfile))
             {
                 return true;
             }
