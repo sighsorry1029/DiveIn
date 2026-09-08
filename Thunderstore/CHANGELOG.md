@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.2
+
+- Repackaged version 1.2.1 as 1.2.2 with synchronized plugin and manifest versions. No gameplay, configuration, or API changes.
+
 ## 1.2.1
 
 - Fixed additional moving swim stamina drain applying the global stamina-use multiplier twice when it differs from 1, while preserving vanilla stamina-use hooks and regeneration delay.
