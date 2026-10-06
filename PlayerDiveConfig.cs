@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using BepInEx;
@@ -12,6 +13,13 @@ public partial class ServerSyncModTemplatePlugin
     {
         Press,
         Toggle
+    }
+
+    public enum SwimHudMode
+    {
+        Full,
+        FastSwimOnly,
+        Off
     }
 
     internal const float DefaultUnderwaterDarknessFactor = 0.5f;
@@ -31,6 +39,7 @@ public partial class ServerSyncModTemplatePlugin
     internal static ConfigEntry<float> _fastSwimStaminaDrainMultiplier = null!;
     internal static ConfigEntry<float> _encumberedSwimSpeedMultiplier = null!;
     internal static ConfigEntry<FastSwimInputMode> _fastSwimInputMode = null!;
+    internal static ConfigEntry<SwimHudMode> _swimHudMode = null!;
     internal static ConfigEntry<float> _playerProjectileUnderwaterTtlMultiplier = null!;
     internal static ConfigEntry<float> _playerProjectileUnderwaterSpeedMultiplier = null!;
     internal static ConfigEntry<float> _playerProjectileUnderwaterDamageMultiplier = null!;
@@ -138,7 +147,7 @@ public partial class ServerSyncModTemplatePlugin
             "Fast Swim Speed Multiplier",
             2f,
             new ConfigDescription(
-                "Swim speed multiplier while Fast Swim is enabled with the vanilla run key. 1 disables Fast Swim and hides its key hint. Swim skill separately increases base swim speed.",
+                "Swim speed multiplier while Fast Swim is enabled with the vanilla run key. 1 disables Fast Swim and hides its status and key hint; Full HUD mode still shows ascent and descent controls. Swim skill separately increases base swim speed.",
                 new AcceptableValueRange<float>(1f, 3f),
                 new ConfigurationManagerAttributes { Order = 109 }));
         _fastSwimStaminaDrainMultiplier = config(
@@ -216,6 +225,21 @@ public partial class ServerSyncModTemplatePlugin
                 null,
                 new ConfigurationManagerAttributes { Order = 108 }),
             synchronizedSetting: false);
+        string? savedSwimHudMode = TakePersistedSwimHudMode(Config);
+        _swimHudMode = config(
+            "2 - Player Diving",
+            "Swim HUD Mode",
+            SwimHudMode.Full,
+            new ConfigDescription(
+                "Client-side swimming HUD near the stamina bar, independent of the game's Key Hints setting. Full shows ascent/descent controls and Fast Swim On/Off; FastSwimOnly shows only the status. Off hides this HUD and restores the regular dive key hints if Key Hints are enabled. Unavailable Fast Swim status is hidden while Full mode keeps the dive controls. Swimming behavior is unchanged.",
+                null,
+                new ConfigurationManagerAttributes { Order = 107 }),
+            synchronizedSetting: false);
+        if (savedSwimHudMode != null)
+        {
+            _swimHudMode.SetSerializedValue(savedSwimHudMode);
+        }
+
         _underwaterDarknessFactor = config(
             "2 - Player Diving",
             "Darkness Factor",
@@ -234,6 +258,40 @@ public partial class ServerSyncModTemplatePlugin
                 new AcceptableValueRange<float>(0f, 3f),
                 new ConfigurationManagerAttributes { Order = 91 }),
             synchronizedSetting: true);
+    }
+
+    internal static string? TakePersistedSwimHudMode(ConfigFile configFile)
+    {
+        ConfigDefinition modeDefinition = new("2 - Player Diving", "Swim HUD Mode");
+        ConfigDefinition oldDefinition = new("2 - Player Diving", "Show Fast Swim HUD");
+        bool saveOnSet = configFile.SaveOnConfigSet;
+        configFile.SaveOnConfigSet = false;
+        try
+        {
+            // Public Bind consumes an unbound saved entry; Remove then retires the old key.
+            // A null default distinguishes an absent new key from a present but invalid value.
+            string? savedMode = configFile.Bind<string?>(modeDefinition, null).Value;
+            string? oldToggle = configFile.Bind<string?>(oldDefinition, null).Value;
+            configFile.Remove(modeDefinition);
+            configFile.Remove(oldDefinition);
+            if (savedMode != null)
+            {
+                return savedMode;
+            }
+
+            return Enum.TryParse(oldToggle, true, out Toggle oldValue)
+                ? oldValue switch
+                {
+                    Toggle.On => nameof(SwimHudMode.Full),
+                    Toggle.Off => nameof(SwimHudMode.Off),
+                    _ => null
+                }
+                : null;
+        }
+        finally
+        {
+            configFile.SaveOnConfigSet = saveOnSet;
+        }
     }
 
     internal static float GetUnderwaterDarknessFactor()

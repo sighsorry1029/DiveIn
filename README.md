@@ -14,12 +14,14 @@ Normally, creatures cannot follow a diving player far below the surface. DiveIn 
 - Surface and midwater stamina regeneration are configured separately.
 - Idle underwater stamina drain and moving swim drain can scale with liquid depth.
 - Fast Swim supports press or toggle input, with separate speed and stamina multipliers.
+- A client-side swimming HUD below the stamina bar uses the stamina number's font and size. `Swim HUD Mode` selects `Full` (ascent/descent bindings, then Fast Swim On/Off below), `FastSwimOnly` (status only), or `Off` (regular key hints, when enabled in the game). On describes the selected mode, not movement at that instant; empty stamina changes the status color without adding text. The HUD stays visible when the full stamina bar fades and works independently of vanilla Key Hints. Only the key-hint rows currently covered by the HUD are suppressed. Full keeps ascent/descent controls even when Fast Swim is unavailable.
 - Swim skill and encumbrance have independent speed multipliers.
 - Surface swimming retains the vanilla swim depth; DiveIn changes depth only while diving.
 - Attacking, secondary attacking, and guarding temporarily take priority over swim movement.
 - Player-owned underwater projectiles can use synchronized lifetime, speed, and damage multipliers on the initial launch. Child projectiles spawned by `Projectile.SpawnOnHit` keep the parent spawn logic's values without another DiveIn multiplier, so inherited damage and speed are not repeatedly reduced down the chain.
 - Equipment is usable in water by default; a synchronized prefab blacklist keeps restrictions on listed items without propagating armor or accessory entries to hand equipment. Listed hand items retain vanilla hand-item hiding.
 - Swimming key hints use the active keyboard or gamepad bindings and supported Valheim languages.
+- Vanilla water color interpolation is initialized correctly across zone borders, above and below the surface. This client-side fix targets the vanilla water shader only; it does not retint the coast or change water depth, waves, buoyancy or swimming physics.
 
 ## Creature diving
 
@@ -88,7 +90,7 @@ The configuration is grouped into:
 - Underwater projectile lifetime, speed, and damage
 - Underwater darkness and murkiness
 
-The ascend key, descend key, and Fast Swim input mode are client-side. Settings marked `[Synced with Server]` are controlled by the server when configuration locking is enabled.
+The ascend key, descend key, Fast Swim input mode, and `Swim HUD Mode` (default `Full`) are client-side. HUD mode changes take effect immediately and do not change swimming behavior. At startup, the retired `Show Fast Swim HUD` setting is migrated from On to Full or Off to Off only if the new key is absent; an existing `Swim HUD Mode` takes precedence. Settings marked `[Synced with Server]` are controlled by the server when configuration locking is enabled.
 
 ## Building
 
@@ -119,6 +121,8 @@ This updates both `Plugin.cs` `ModVersion` and the tracked `Thunderstore/manifes
 On Windows, `dotnet build DiveIn.sln -c Release` verifies that the compiled assembly, `ModVersion`, and the tracked manifest have the same version before creating the Thunderstore and Nexus archives. A mismatch fails the build before either ZIP is written.
 
 ## Credits
+
+The water color seam UV initialization follows the finding in MidnightsFX's [ValheimCommunityPatch WaterColorSeamPatch](https://github.com/MidnightsFX/Valheim-Community-Patch/blob/master/ValheimCommunityPatch/Patches/Correctness/WaterColorSeamPatch.cs) (GPL-3.0). DiveIn applies only the UV initialization, not the separate shore-color tint adjustment.
 
 The player diving implementation includes code derived and modified from [UnderTheSea](https://github.com/searica/UnderTheSea).
 

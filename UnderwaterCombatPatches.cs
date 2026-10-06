@@ -7,6 +7,9 @@ namespace ServerSyncModTemplate;
 [HarmonyPatch]
 internal static class UnderwaterCombatPatches
 {
+    private static readonly int BlockingAnimationHash = ZSyncAnimation.GetHash("blocking");
+    private static readonly int InWaterAnimationHash = ZSyncAnimation.GetHash("inWater");
+
     [HarmonyPrefix]
     [HarmonyPatch(typeof(Player), nameof(Player.SetControls))]
     private static void PlayerSetControlsPrefix(
@@ -36,12 +39,12 @@ internal static class UnderwaterCombatPatches
 
         if (block && CanForceShowHiddenBlocker(__instance))
         {
-            __instance.ShowHandItems();
+            GameAccess.ShowHandItems(__instance, false, true);
         }
     }
 
     [HarmonyPostfix]
-    [HarmonyPatch(typeof(Character), nameof(Character.UpdateSwimming))]
+    [HarmonyPatch(typeof(Character), "UpdateSwimming")]
     private static void CharacterUpdateSwimmingPostfix(Character __instance)
     {
         if (__instance is not Player player || !ShouldShowUnderwaterGuardAnimation(player))
@@ -49,8 +52,8 @@ internal static class UnderwaterCombatPatches
             return;
         }
 
-        player.m_zanim.SetBool(Humanoid.s_blocking, true);
-        player.m_zanim.SetBool(Character.s_inWater, false);
+        player.GetZAnim().SetBool(BlockingAnimationHash, true);
+        player.GetZAnim().SetBool(InWaterAnimationHash, false);
     }
 
     private static bool CanForceShowHiddenBlocker(Player player)
@@ -71,20 +74,20 @@ internal static class UnderwaterCombatPatches
 
     private static bool HasWaterRestrictedHiddenBlocker(Player player)
     {
-        return IsWaterRestrictedHiddenBlocker(player.m_hiddenRightItem) ||
-               IsWaterRestrictedHiddenBlocker(player.m_hiddenLeftItem);
+        return IsWaterRestrictedHiddenBlocker(GameAccess.HiddenRightItem(player)) ||
+               IsWaterRestrictedHiddenBlocker(GameAccess.HiddenLeftItem(player));
     }
 
     private static bool HasHiddenBlocker(Player player)
     {
-        return IsBlockableItem(player.m_hiddenLeftItem) ||
-               IsBlockableItem(player.m_hiddenRightItem);
+        return IsBlockableItem(GameAccess.HiddenLeftItem(player)) ||
+               IsBlockableItem(GameAccess.HiddenRightItem(player));
     }
 
     private static bool HasEquippedBlocker(Player player)
     {
-        return IsBlockableItem(player.m_leftItem) ||
-               IsBlockableItem(player.m_rightItem);
+        return IsBlockableItem(player.LeftItem) ||
+               IsBlockableItem(player.RightItem);
     }
 
     private static bool IsWaterRestrictedHiddenBlocker(ItemDrop.ItemData? item)

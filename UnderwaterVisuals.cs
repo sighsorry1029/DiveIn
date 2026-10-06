@@ -163,7 +163,7 @@ internal static class UnderwaterCameraPatches
         PlayerDiveController diver,
         float waterLevel)
     {
-        Camera? camera = gameCamera.m_camera;
+        Camera? camera = GameAccess.Camera(gameCamera);
         if (camera == null || diver.Player.m_eye == null)
         {
             return;
@@ -196,7 +196,7 @@ internal static class UnderwaterCameraPatches
         float distanceFraction = Mathf.Clamp01((maximumCameraY - eyePosition.y) / verticalSpan);
         cameraTransform.position = Vector3.Lerp(eyePosition, cameraPosition, distanceFraction);
         camera.nearClipPlane = Mathf.Min(camera.nearClipPlane, gameCamera.m_nearClipPlaneMin);
-        gameCamera.m_waterClipping = true;
+        GameAccess.WaterClipping(gameCamera) = true;
     }
 
     private static PlayerDiveController? GetVisualDiver(
@@ -205,7 +205,7 @@ internal static class UnderwaterCameraPatches
         out float waterLevel)
     {
         waterLevel = -10000f;
-        if (gameCamera == null || gameCamera.m_camera == null)
+        if (gameCamera == null || GameAccess.Camera(gameCamera) == null)
         {
             return null;
         }
@@ -220,11 +220,11 @@ internal static class UnderwaterCameraPatches
     }
 
     [HarmonyPrefix]
-    [HarmonyPatch(typeof(GameCamera), nameof(GameCamera.UpdateCamera))]
+    [HarmonyPatch(typeof(GameCamera), "UpdateCamera")]
     private static void GameCameraUpdateCameraPrefix(GameCamera __instance)
     {
         UnderwaterSurfaceRenderer.ResetStale();
-        PlayerDiveController? diver = __instance.m_camera != null
+        PlayerDiveController? diver = GameAccess.Camera(__instance) != null
             ? PlayerDiveUtils.EnsureLocalDiver()
             : null;
         diver?.UpdateWaterTeleportTransition();
@@ -238,10 +238,10 @@ internal static class UnderwaterCameraPatches
     }
 
     [HarmonyPostfix]
-    [HarmonyPatch(typeof(GameCamera), nameof(GameCamera.UpdateCamera))]
+    [HarmonyPatch(typeof(GameCamera), "UpdateCamera")]
     private static void GameCameraUpdateCameraPostfix(GameCamera __instance)
     {
-        Camera? camera = __instance.m_camera;
+        Camera? camera = GameAccess.Camera(__instance);
         PlayerDiveController? diver = camera != null
             ? PlayerDiveUtils.EnsureLocalDiver()
             : null;
@@ -275,7 +275,7 @@ internal static class UnderwaterCameraPatches
         }
 
         GameCamera? gameCamera = GameCamera.instance;
-        Camera? camera = gameCamera != null ? gameCamera.m_camera : null;
+        Camera? camera = gameCamera != null ? GameAccess.Camera(gameCamera) : null;
         PlayerDiveController? diver = camera != null
             ? PlayerDiveUtils.EnsureLocalDiver()
             : null;

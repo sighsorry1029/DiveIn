@@ -11,10 +11,10 @@ internal static class UnderwaterProjectilePatches
     private static int _playerProjectileSpawnOnHitDepth;
 
     [HarmonyPrefix]
-    [HarmonyPatch(typeof(Projectile), nameof(Projectile.SpawnOnHit), new[] { typeof(GameObject), typeof(Collider), typeof(Vector3) })]
+    [HarmonyPatch(typeof(Projectile), "SpawnOnHit", new[] { typeof(GameObject), typeof(Collider), typeof(Vector3) })]
     private static void ProjectileSpawnOnHitPrefix(Projectile __instance, out bool __state)
     {
-        __state = __instance != null && __instance.m_owner is Player;
+        __state = __instance != null && GameAccess.ProjectileOwner(__instance) is Player;
         if (__state)
         {
             _playerProjectileSpawnOnHitDepth++;
@@ -22,7 +22,7 @@ internal static class UnderwaterProjectilePatches
     }
 
     [HarmonyFinalizer]
-    [HarmonyPatch(typeof(Projectile), nameof(Projectile.SpawnOnHit), new[] { typeof(GameObject), typeof(Collider), typeof(Vector3) })]
+    [HarmonyPatch(typeof(Projectile), "SpawnOnHit", new[] { typeof(GameObject), typeof(Collider), typeof(Vector3) })]
     private static void ProjectileSpawnOnHitFinalizer(ref bool __state)
     {
         if (!__state)
@@ -62,14 +62,14 @@ internal static class UnderwaterProjectilePatches
 
     private static bool IsLocallyOwnedProjectile(Projectile projectile)
     {
-        return projectile.m_nview == null
-               || !projectile.m_nview.IsValid()
-               || projectile.m_nview.IsOwner();
+        return GameAccess.ProjectileView(projectile) == null
+               || !GameAccess.ProjectileView(projectile).IsValid()
+               || GameAccess.ProjectileView(projectile).IsOwner();
     }
 
     private static bool IsPlayerOwnedProjectile(Projectile projectile, Character? owner)
     {
-        return owner is Player || projectile.m_owner is Player;
+        return owner is Player || GameAccess.ProjectileOwner(projectile) is Player;
     }
 
     private static bool IsUnderwater(Vector3 position)
@@ -89,7 +89,7 @@ internal static class UnderwaterProjectilePatches
         float speedMultiplier = ServerSyncModTemplatePlugin.GetPlayerProjectileUnderwaterSpeedMultiplier();
         if (!Mathf.Approximately(speedMultiplier, 1f))
         {
-            projectile.m_vel *= speedMultiplier;
+            GameAccess.ProjectileVelocity(projectile) *= speedMultiplier;
         }
 
         float damageMultiplier = ServerSyncModTemplatePlugin.GetPlayerProjectileUnderwaterDamageMultiplier();
@@ -99,10 +99,10 @@ internal static class UnderwaterProjectilePatches
         }
 
         projectile.m_damage.Modify(damageMultiplier);
-        if (projectile.m_originalHitData != null)
+        if (GameAccess.OriginalHitData(projectile) != null)
         {
-            projectile.m_originalHitData = projectile.m_originalHitData.Clone();
-            projectile.m_originalHitData.m_damage.Modify(damageMultiplier);
+            GameAccess.OriginalHitData(projectile) = GameAccess.OriginalHitData(projectile).Clone();
+            GameAccess.OriginalHitData(projectile).m_damage.Modify(damageMultiplier);
         }
     }
 }

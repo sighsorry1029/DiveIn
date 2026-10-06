@@ -113,7 +113,7 @@ public partial class ServerSyncModTemplatePlugin
     {
         if (ai is MonsterAI typedMonster && typedMonster)
         {
-            Character monsterCharacter = typedMonster.m_character;
+            Character monsterCharacter = GameAccess.AICharacter(typedMonster);
             if (ShouldUseWaterDiveMode(monsterCharacter) &&
                 TryGetConfiguredDiveProfile(typedMonster, out configuredDiveProfile))
             {
@@ -136,12 +136,12 @@ public partial class ServerSyncModTemplatePlugin
             return false;
         }
 
-        return character.InWater() && character.InLiquidDepth() > 0.05f;
+        return character.InWater() && GameAccess.LiquidDepth(character) > 0.05f;
     }
 
     private static bool IsPassiveDiveState(MonsterAI monsterAI)
     {
-        return !monsterAI.IsAlerted() && monsterAI.m_targetCreature == null && monsterAI.m_targetStatic == null;
+        return !monsterAI.IsAlerted() && monsterAI.GetTargetCreature() == null && monsterAI.GetStaticTarget() == null;
     }
 
     private static ShallowWaterFleeRequest GetShallowWaterFleeRequest(
@@ -153,11 +153,11 @@ public partial class ServerSyncModTemplatePlugin
             return default;
         }
 
-        Vector3 fleeFrom = monsterAI.m_targetCreature != null
-            ? monsterAI.m_targetCreature.transform.position
-            : monsterAI.m_targetStatic != null
-                ? monsterAI.m_targetStatic.GetCenter()
-                : monsterAI.m_lastKnownTargetPos;
+        Vector3 fleeFrom = monsterAI.GetTargetCreature() != null
+            ? monsterAI.GetTargetCreature().transform.position
+            : monsterAI.GetStaticTarget() != null
+                ? monsterAI.GetStaticTarget().GetCenter()
+                : GameAccess.LastTargetPosition(monsterAI);
         return new ShallowWaterFleeRequest(fleeFrom);
     }
 
@@ -168,14 +168,25 @@ public partial class ServerSyncModTemplatePlugin
             return true;
         }
 
-        if (monsterAI.m_tamable != null
-            && monsterAI.m_tamable.m_saddle != null
-            && monsterAI.m_tamable.m_saddle.HaveValidUser())
+        if (GameAccess.AITameable(monsterAI) != null
+            && GameAccess.AITameable(monsterAI).m_saddle != null
+            && GameAccess.AITameable(monsterAI).m_saddle.HaveValidUser())
         {
             return true;
         }
 
         if (monsterAI.DespawnInDay() && EnvMan.IsDay())
+        {
+            return true;
+        }
+
+        // Valheim 1.0 adds crown fear before ordinary target movement. Do not
+        // replace its flee destination or clear its target in our postfix.
+        Character target = monsterAI.GetTargetCreature();
+        if (target is Player player && player.InCrownMode()
+            && GameAccess.AICharacter(monsterAI).GetFaction() != Character.Faction.Boss
+            && Vector3.Distance(target.transform.position, monsterAI.transform.position)
+               - target.GetRadius() < monsterAI.m_crownFearRange)
         {
             return true;
         }
@@ -188,16 +199,16 @@ public partial class ServerSyncModTemplatePlugin
         float dt,
         ShallowWaterFleeRequest fleeRequest)
     {
-        monsterAI.m_lastKnownTargetPos = fleeRequest.FleeFrom;
-        monsterAI.m_targetCreature = null;
-        monsterAI.m_targetStatic = null;
-        monsterAI.m_updateTargetTimer = Mathf.Max(monsterAI.m_updateTargetTimer, ShallowWaterRetargetDelay);
-        monsterAI.Flee(dt, fleeRequest.FleeFrom);
+        GameAccess.LastTargetPosition(monsterAI) = fleeRequest.FleeFrom;
+        GameAccess.TargetCreature(monsterAI) = null;
+        GameAccess.TargetStatic(monsterAI) = null;
+        GameAccess.TargetTimer(monsterAI) = Mathf.Max(GameAccess.TargetTimer(monsterAI), ShallowWaterRetargetDelay);
+        GameAccess.Flee(monsterAI, dt, fleeRequest.FleeFrom);
     }
 
     private static bool ShouldFleeFromShallowWater(MonsterAI monsterAI, ConfiguredDiveProfile profile)
     {
-        if (monsterAI == null || monsterAI.m_character == null)
+        if (monsterAI == null || GameAccess.AICharacter(monsterAI) == null)
         {
             if (monsterAI != null)
             {
@@ -214,7 +225,7 @@ public partial class ServerSyncModTemplatePlugin
             return false;
         }
 
-        if (monsterAI.m_nview == null || !monsterAI.m_nview.IsOwner())
+        if (GameAccess.AIView(monsterAI) == null || !GameAccess.AIView(monsterAI).IsOwner())
         {
             ShallowWaterFleeingByInstance.Remove(monsterAI.GetInstanceID());
             return false;
@@ -222,7 +233,7 @@ public partial class ServerSyncModTemplatePlugin
 
         int instanceId = monsterAI.GetInstanceID();
         bool wasFleeing = ShallowWaterFleeingByInstance.Contains(instanceId);
-        if (!ShouldUseWaterDiveMode(monsterAI.m_character))
+        if (!ShouldUseWaterDiveMode(GameAccess.AICharacter(monsterAI)))
         {
             ShallowWaterFleeingByInstance.Remove(instanceId);
             return false;
@@ -233,7 +244,7 @@ public partial class ServerSyncModTemplatePlugin
             return false;
         }
 
-        if (!TryGetTerrainWaterDepth(monsterAI.m_character, out float terrainWaterDepth))
+        if (!TryGetTerrainWaterDepth(GameAccess.AICharacter(monsterAI), out float terrainWaterDepth))
         {
             ShallowWaterFleeingByInstance.Remove(instanceId);
             return false;
@@ -257,7 +268,7 @@ public partial class ServerSyncModTemplatePlugin
         }
 
         ShallowWaterFleeingByInstance.Remove(instanceId);
-        monsterAI.m_updateTargetTimer = Mathf.Max(monsterAI.m_updateTargetTimer, ShallowWaterRetargetDelay);
+        GameAccess.TargetTimer(monsterAI) = Mathf.Max(GameAccess.TargetTimer(monsterAI), ShallowWaterRetargetDelay);
         return false;
     }
 
@@ -292,7 +303,7 @@ public partial class ServerSyncModTemplatePlugin
 
         EnsureAvoidLandForCurrentDiveState(monsterAI);
 
-        Character character = monsterAI.m_character;
+        Character character = GameAccess.AICharacter(monsterAI);
         if (character != null && !character.m_canSwim)
         {
             character.m_canSwim = true;
@@ -301,7 +312,7 @@ public partial class ServerSyncModTemplatePlugin
 
     private static void PreserveInitialUnderwaterSpawnDepth(MonsterAI monsterAI, ConfiguredDiveProfile profile)
     {
-        if (monsterAI == null || monsterAI.m_character == null)
+        if (monsterAI == null || GameAccess.AICharacter(monsterAI) == null)
         {
             return;
         }
@@ -318,7 +329,7 @@ public partial class ServerSyncModTemplatePlugin
         }
 
         InitialSpawnDepthPreservedByInstance.Add(instanceId);
-        Character character = monsterAI.m_character;
+        Character character = GameAccess.AICharacter(monsterAI);
         if (!TryGetCurrentWaterDepth(character, out float currentWaterDepth))
         {
             return;
@@ -356,7 +367,7 @@ public partial class ServerSyncModTemplatePlugin
 
     private static void EnsureAvoidLandForCurrentDiveState(MonsterAI monsterAI)
     {
-        bool underwaterMode = ShouldUseWaterDiveMode(monsterAI.m_character);
+        bool underwaterMode = ShouldUseWaterDiveMode(GameAccess.AICharacter(monsterAI));
         if (underwaterMode)
         {
             if (monsterAI.m_avoidLand)
@@ -398,7 +409,7 @@ public partial class ServerSyncModTemplatePlugin
             RemoveTrackedMonsterState(instanceId);
         }
 
-        Character character = monsterAI.m_character;
+        Character character = GameAccess.AICharacter(monsterAI);
         OriginalDiveFlagsByInstance[instanceId] = new OriginalDiveFlags(
             monsterAI,
             monsterAI.m_avoidWater,
@@ -489,7 +500,7 @@ public partial class ServerSyncModTemplatePlugin
 
         monsterAI.m_avoidWater = originalFlags.AvoidWater;
         monsterAI.m_avoidLand = originalFlags.AvoidLand;
-        Character character = monsterAI.m_character;
+        Character character = GameAccess.AICharacter(monsterAI);
         if (character != null)
         {
             character.m_canSwim = originalFlags.CanSwim;

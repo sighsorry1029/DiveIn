@@ -253,7 +253,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
             return false;
         }
 
-        if (Player.GetGroundHeight(Player.transform.position, out float height, out Vector3 _)
+        if (GameAccess.GroundHeight(Player, Player.transform.position, out float height, out Vector3 _)
             && Player.transform.position.y - height < 1f)
         {
             return false;
@@ -355,9 +355,9 @@ internal sealed class PlayerDiveController : MonoBehaviour
             Player,
             Player.m_swimDepth,
             _surfaceSwimDepth);
-        Player.m_body.WakeUp();
-        Player.m_lastGroundTouch = 0.3f;
-        Player.m_swimTimer = 0f;
+        GameAccess.Body(Player).WakeUp();
+        GameAccess.LastGroundTouch(Player) = 0.3f;
+        GameAccess.SwimTimer(Player) = 0f;
     }
 
     internal bool IsUnderSurface()
@@ -427,21 +427,21 @@ internal sealed class PlayerDiveController : MonoBehaviour
             regenFactor *= 0.8f;
         }
 
-        if (Player.InAttack() || Player.InDodge() || Player.m_wallRunning || Player.IsEncumbered())
+        if (Player.InAttack() || Player.InDodge() || GameAccess.WallRunning(Player) || Player.IsEncumbered())
         {
             regenFactor = 0f;
         }
 
         float regenSpeed = (Player.m_staminaRegen
-                            + (1f - Player.m_stamina / maxStamina) * Player.m_staminaRegen * Player.m_staminaRegenTimeMultiplier)
+                            + (1f - Player.GetStamina() / maxStamina) * Player.m_staminaRegen * Player.m_staminaRegenTimeMultiplier)
                            * regenFactor;
         float staminaMultiplier = 1f;
-        Player.m_seman.ModifyStaminaRegen(ref staminaMultiplier);
+        Player.GetSEMan().ModifyStaminaRegen(ref staminaMultiplier);
         regenSpeed *= staminaMultiplier;
         regenSpeed *= waterRegenRate;
-        if (Player.m_stamina < maxStamina && Player.m_staminaRegenTimer <= 0f)
+        if (Player.GetStamina() < maxStamina && GameAccess.StaminaRegenTimer(Player) <= 0f)
         {
-            Player.m_stamina = Mathf.Min(maxStamina, Player.m_stamina + regenSpeed * dt * Game.m_staminaRegenRate);
+            GameAccess.Stamina(Player) = Mathf.Min(maxStamina, Player.GetStamina() + regenSpeed * dt * Game.m_staminaRegenRate);
         }
     }
 
@@ -453,7 +453,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
             return;
         }
 
-        float liquidDepth = Mathf.Max(0f, Player.InLiquidDepth());
+        float liquidDepth = Mathf.Max(0f, GameAccess.LiquidDepth(Player));
         float drainPerSecond = liquidDepth * drainPerMeter;
         if (drainPerSecond <= 0f)
         {
@@ -465,7 +465,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
 
     internal void AdjustMovingSwimStaminaDrain(float staminaBeforeVanillaSwim)
     {
-        float vanillaDrain = Mathf.Max(0f, staminaBeforeVanillaSwim - Player.m_stamina);
+        float vanillaDrain = Mathf.Max(0f, staminaBeforeVanillaSwim - Player.GetStamina());
         if (vanillaDrain <= 0f)
         {
             return;
@@ -482,9 +482,9 @@ internal sealed class PlayerDiveController : MonoBehaviour
             staminaBeforeVanillaSwim - scaledDrain,
             0f,
             Player.GetMaxStamina());
-        if (targetStamina < Player.m_stamina)
+        if (targetStamina < Player.GetStamina())
         {
-            float extraDrain = Player.m_stamina - targetStamina;
+            float extraDrain = Player.GetStamina() - targetStamina;
             // The observed drain already includes this rate; UseStamina applies it again.
             // Keep UseStamina's hooks, ownership handling and regen delay for the extra cost.
             float staminaRate = Game.m_staminaRate;
@@ -492,7 +492,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
             return;
         }
 
-        Player.m_stamina = targetStamina;
+        GameAccess.Stamina(Player) = targetStamina;
     }
 
     internal void UpdateSwimSpeed()
@@ -534,7 +534,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
 
     private float GetSwimSkillSpeedMultiplier()
     {
-        float swimSkillFactor = Player.m_skills.GetSkillFactor(Skills.SkillType.Swim);
+        float swimSkillFactor = Player.GetSkills().GetSkillFactor(Skills.SkillType.Swim);
         float maxSkillMultiplier = Mathf.Max(1f, ServerSyncModTemplatePlugin._playerSwimSkillSpeedMultiplier.Value);
         return Mathf.Lerp(1f, maxSkillMultiplier, swimSkillFactor);
     }
@@ -551,7 +551,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
 
     internal void Dive(float dt, bool ascend)
     {
-        Player.m_moveDir = GetDiveDirection(ascend);
+        Player.SetMoveDir(GetDiveDirection(ascend));
         if (ascend)
         {
             EnsureAscendTargetFromBottom();
@@ -616,7 +616,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
         }
 
         Quaternion targetRotation = Quaternion.LookRotation(horizontalForward.normalized, Vector3.up);
-        float effectiveSpeed = Player.m_swimTurnSpeed * Player.GetAttackSpeedFactorRotation();
+        float effectiveSpeed = Player.m_swimTurnSpeed * GameAccess.AttackSpeedRotation(Player);
         Player.transform.rotation = Quaternion.RotateTowards(
             Player.transform.rotation,
             targetRotation,
@@ -631,7 +631,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
 
     private void EnsureAscendTargetFromBottom()
     {
-        float currentLiquidDepth = Player.InLiquidDepth();
+        float currentLiquidDepth = GameAccess.LiquidDepth(Player);
         if (currentLiquidDepth <= _surfaceSwimDepth || !UnderwaterDepthUtils.IsAtUnderwaterBottom(Player))
         {
             return;
@@ -643,13 +643,13 @@ internal sealed class PlayerDiveController : MonoBehaviour
             Player.m_swimDepth = ascendTargetDepth;
         }
 
-        Player.m_body.WakeUp();
+        GameAccess.Body(Player).WakeUp();
     }
 
     private Vector3 GetDiveDirection(bool ascend)
     {
         Vector3 verticalDirection = ascend ? Vector3.up : Vector3.down;
-        Vector3 horizontalDirection = Player.m_moveDir;
+        Vector3 horizontalDirection = Player.GetMoveDir();
         if (horizontalDirection.magnitude < 0.1f)
         {
             float scale = ascend && IsSurfacing() ? 0.6f : 0.05f;
@@ -662,7 +662,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
 
     private Vector3 GetHorizontalLookDirection(float scale)
     {
-        Vector3 horizontalDirection = Player.m_lookDir;
+        Vector3 horizontalDirection = Player.GetLookDir();
         horizontalDirection.y = 0f;
         horizontalDirection.Normalize();
         return horizontalDirection * scale;
@@ -670,16 +670,16 @@ internal sealed class PlayerDiveController : MonoBehaviour
 
     private Vector3 CalculateSwimVelocity()
     {
-        float speed = Player.m_swimSpeed * Player.GetAttackSpeedFactorMovement();
+        float speed = Player.m_swimSpeed * GameAccess.AttackSpeedMovement(Player);
         if (Player.InMinorActionSlowdown())
         {
             speed = 0f;
         }
 
-        Player.m_seman.ApplyStatusEffectSpeedMods(ref speed, Player.m_moveDir);
-        Vector3 velocity = Player.m_moveDir * speed;
-        velocity = Vector3.Lerp(Player.m_currentVel, velocity, Player.m_swimAcceleration);
-        Player.AddPushbackForce(ref velocity);
+        Player.GetSEMan().ApplyStatusEffectSpeedMods(ref speed, Player.GetMoveDir());
+        Vector3 velocity = Player.GetMoveDir() * speed;
+        velocity = Vector3.Lerp(GameAccess.CurrentVelocity(Player), velocity, Player.m_swimAcceleration);
+        GameAccess.AddPushbackForce(Player, ref velocity);
         return velocity;
     }
 
@@ -692,7 +692,7 @@ internal sealed class PlayerDiveController : MonoBehaviour
     private float GetDepthSwimStaminaDrainMultiplier()
     {
         float percentPerMeter = Mathf.Max(0f, ServerSyncModTemplatePlugin._swimStaminaDrainMultiplierPerDepth.Value);
-        float swimDepth = Mathf.Max(0f, Player.InLiquidDepth());
+        float swimDepth = Mathf.Max(0f, GameAccess.LiquidDepth(Player));
         return 1f + swimDepth * percentPerMeter / 100f;
     }
 }

@@ -9,7 +9,7 @@ internal static class UnderwaterDepthUtils
 
     internal static float ClampDepthAboveBottom(Character character, float desiredDepth, float minimumDepth)
     {
-        float currentLiquidDepth = character.InLiquidDepth();
+        float currentLiquidDepth = GameAccess.LiquidDepth(character);
         if (currentLiquidDepth <= 0f || !IsAtUnderwaterBottom(character))
         {
             return desiredDepth;

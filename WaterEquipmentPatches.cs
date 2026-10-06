@@ -43,7 +43,7 @@ internal static class WaterEquipmentPatches
     }
 
     [HarmonyTranspiler]
-    [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.UpdateEquipment))]
+    [HarmonyPatch(typeof(Humanoid), "UpdateEquipment")]
     private static IEnumerable<CodeInstruction> HumanoidUpdateEquipmentTranspiler(IEnumerable<CodeInstruction> instructions)
     {
         return InsertWaterEquipmentBypass(
@@ -72,19 +72,19 @@ internal static class WaterEquipmentPatches
     }
 
     [HarmonyPrefix]
-    [HarmonyPatch(typeof(Player), nameof(Player.Update))]
+    [HarmonyPatch(typeof(Player), "Update")]
     private static void PlayerUpdatePrefix(Player __instance, out bool __state)
     {
         __state = ShouldForceShowHiddenHandItems(__instance);
     }
 
     [HarmonyPostfix]
-    [HarmonyPatch(typeof(Player), nameof(Player.Update))]
+    [HarmonyPatch(typeof(Player), "Update")]
     private static void PlayerUpdatePostfix(Player __instance, bool __state)
     {
         if (__state && CanForceShowHiddenHandItems(__instance))
         {
-            __instance.ShowHandItems();
+            GameAccess.ShowHandItems(__instance, false, true);
         }
     }
 
@@ -98,14 +98,14 @@ internal static class WaterEquipmentPatches
     private static bool CanForceShowHiddenHandItems(Player player)
     {
         return PlayerDiveUtils.TryGetUnderwaterLocalDiver(player, out _)
-               && player.TakeInput()
+               && GameAccess.TakeInput(player)
                && !player.IsOnGround()
                && !player.InDodge()
-               && player.GetRightItem() == null
-               && player.GetLeftItem() == null
-               && (player.m_hiddenRightItem != null || player.m_hiddenLeftItem != null)
-               && !IsWaterRestrictedItem(player.m_hiddenRightItem)
-               && !IsWaterRestrictedItem(player.m_hiddenLeftItem);
+               && player.RightItem == null
+               && player.LeftItem == null
+               && (GameAccess.HiddenRightItem(player) != null || GameAccess.HiddenLeftItem(player) != null)
+               && !IsWaterRestrictedItem(GameAccess.HiddenRightItem(player))
+               && !IsWaterRestrictedItem(GameAccess.HiddenLeftItem(player));
     }
 
     private static bool WasHideInputPressed(Player player)
@@ -142,10 +142,10 @@ internal static class WaterEquipmentPatches
 
     private static bool HasWaterRestrictedHandItem(Humanoid humanoid)
     {
-        return IsWaterRestrictedItem(humanoid.m_rightItem)
-               || IsWaterRestrictedItem(humanoid.m_hiddenRightItem)
-               || IsWaterRestrictedItem(humanoid.m_leftItem)
-               || IsWaterRestrictedItem(humanoid.m_hiddenLeftItem);
+        return IsWaterRestrictedItem(humanoid.RightItem)
+               || IsWaterRestrictedItem(GameAccess.HiddenRightItem(humanoid))
+               || IsWaterRestrictedItem(humanoid.LeftItem)
+               || IsWaterRestrictedItem(GameAccess.HiddenLeftItem(humanoid));
     }
 
     private static void RefreshBlacklistIfNeeded()

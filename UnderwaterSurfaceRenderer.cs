@@ -1,8 +1,36 @@
 using System.Collections.Generic;
+using HarmonyLib;
 using UnityEngine;
 using UnityEngine.Rendering;
 
 namespace ServerSyncModTemplate;
+
+// UV initialization identified by MidnightsFX's ValheimCommunityPatch WaterColorSeamPatch (GPL-3.0).
+// Keep this permanent material setup separate from the temporary underwater surface overrides below.
+[HarmonyPatch(typeof(WaterVolume), "SetupMaterial")]
+internal static class WaterColorSeamPatch
+{
+    private static void Postfix(WaterVolume __instance)
+    {
+        if (SystemInfo.graphicsDeviceType == GraphicsDeviceType.Null || __instance.m_waterSurface == null)
+        {
+            return;
+        }
+
+        // Vanilla SetupMaterial has already created the per-renderer material instance.
+        Material material = __instance.m_waterSurface.material;
+        if (material == null || material.shader == null || material.shader.name != "Custom/Water"
+            || material.HasProperty("_MainTex"))
+        {
+            return;
+        }
+
+        // This uniform is used by the shader but is absent from its exposed property list.
+        // Do not guard it with HasProperty("_MainTex_ST"): that would skip the affected vanilla shader.
+        // Only repair color UVs; leave colors, _depth, wave amplitude and CPU water data untouched.
+        material.SetVector("_MainTex_ST", new Vector4(1f, 1f, 0f, 0f));
+    }
+}
 
 internal static class UnderwaterSurfaceRenderer
 {
@@ -208,10 +236,10 @@ internal static class UnderwaterSurfaceRenderer
                     }
                     else
                     {
-                        _underwaterDepth[0] = Volume.m_normalizedDepth[3];
-                        _underwaterDepth[1] = Volume.m_normalizedDepth[2];
-                        _underwaterDepth[2] = Volume.m_normalizedDepth[1];
-                        _underwaterDepth[3] = Volume.m_normalizedDepth[0];
+                        _underwaterDepth[0] = GameAccess.WaterDepth(Volume)[3];
+                        _underwaterDepth[1] = GameAccess.WaterDepth(Volume)[2];
+                        _underwaterDepth[2] = GameAccess.WaterDepth(Volume)[1];
+                        _underwaterDepth[3] = GameAccess.WaterDepth(Volume)[0];
                     }
 
                     WaterMaterial.SetFloatArray(DepthPropertyId, _underwaterDepth);

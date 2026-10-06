@@ -25,7 +25,7 @@ public partial class ServerSyncModTemplatePlugin
         }
     }
 
-    [HarmonyPatch(typeof(MonsterAI), nameof(MonsterAI.Awake))]
+    [HarmonyPatch(typeof(MonsterAI), "Awake")]
     private static class MonsterAIAwakePatch
     {
         private static void Postfix(MonsterAI __instance)
@@ -77,7 +77,7 @@ public partial class ServerSyncModTemplatePlugin
         }
     }
 
-    [HarmonyPatch(typeof(BaseAI), nameof(BaseAI.HavePath))]
+    [HarmonyPatch(typeof(BaseAI), "HavePath")]
     private static class BaseAIHavePathPatch
     {
         private static bool Prefix(BaseAI __instance, Vector3 target, ref bool __result)
@@ -96,7 +96,7 @@ public partial class ServerSyncModTemplatePlugin
         }
     }
 
-    [HarmonyPatch(typeof(BaseAI), nameof(BaseAI.MoveTo))]
+    [HarmonyPatch(typeof(BaseAI), "MoveTo")]
     private static class BaseAIMoveToPatch
     {
         private static bool Prefix(BaseAI __instance, float dt, Vector3 point, float dist, bool run, ref bool __result)
@@ -137,7 +137,7 @@ public partial class ServerSyncModTemplatePlugin
 
             if (monsterAI.m_serpentMovement)
             {
-                __instance.MoveTowardsSwoop(navigationPlan.Direction, run, navigationPlan.LookaheadDistance);
+                GameAccess.MoveTowardsSwoop(__instance, navigationPlan.Direction, run, navigationPlan.LookaheadDistance);
             }
             else
             {

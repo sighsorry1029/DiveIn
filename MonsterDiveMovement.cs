@@ -350,7 +350,7 @@ public partial class ServerSyncModTemplatePlugin
         out Vector3 candidate)
     {
         candidate = Quaternion.Euler(0f, angle, 0f) * horizontal;
-        if (ai.CanMove(candidate, radius, checkDistance))
+        if (GameAccess.CanMove(ai, candidate, radius, checkDistance))
         {
             return true;
         }

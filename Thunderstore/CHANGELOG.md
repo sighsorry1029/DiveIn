@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.2.4
+
+- Added a compact swimming HUD with ascent/descent controls on the first row and a simple Fast Swim On/Off status below, styled to match the stamina bar's number text and updated for keyboard/gamepad bindings.
+- Added the client-only Swim HUD Mode setting: Full (default), FastSwimOnly, or Off. Existing Show Fast Swim HUD settings migrate automatically, and matching vanilla key hints are hidden only while their replacement HUD row is visible.
+- Fixed vanilla water color interpolation across zone borders by initializing the water shader's UV transform. No extra shoreline tint is applied, and water depth, waves, buoyancy, and swimming physics are unchanged.
+- Updated the packaged BepInExPack dependency to 5.4.2351.
+
+## 1.2.3
+
+- Added compatibility with Valheim 1.0.7 by rebuilding against the original game assemblies and replacing publicized-only member access with cached, explicit Harmony accessors.
+- Fixed DiveIn initialization failing after `ZRoutedRpc.Everybody` became a constant by updating the embedded ServerSync compatibility build while preserving configuration locking, synchronization, and version policy.
+- Preserved Valheim 1.0 crown-fear movement priority for configured diving creatures, and hid DiveIn key hints while the new achievements panel is open.
+- Updated the packaged BepInExPack dependency to 5.4.2350. Configuration keys, `DiveIn.yaml`, and public behavior contracts remain unchanged.
+
 ## 1.2.2
 
 - Repackaged version 1.2.1 as 1.2.2 with synchronized plugin and manifest versions. No gameplay, configuration, or API changes.

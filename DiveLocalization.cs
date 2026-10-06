@@ -78,10 +78,10 @@ internal static class DiveLocalization
         }
 
         DiveHintTranslation translation = GetTranslation(NormalizeLanguageName(localization.GetSelectedLanguage()));
-        localization.AddWord(FastSwimOnKey.Substring(1), translation.FastSwimOn);
-        localization.AddWord(FastSwimOffKey.Substring(1), translation.FastSwimOff);
-        localization.AddWord(DescendKey.Substring(1), translation.Descend);
-        localization.AddWord(AscendKey.Substring(1), translation.Ascend);
+        GameAccess.AddWord(localization, FastSwimOnKey.Substring(1), translation.FastSwimOn);
+        GameAccess.AddWord(localization, FastSwimOffKey.Substring(1), translation.FastSwimOff);
+        GameAccess.AddWord(localization, DescendKey.Substring(1), translation.Descend);
+        GameAccess.AddWord(localization, AscendKey.Substring(1), translation.Ascend);
     }
 
     internal static string Localize(string key)

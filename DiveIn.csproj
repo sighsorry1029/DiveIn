@@ -62,7 +62,6 @@
         <CorlibPath Condition="'$(CorlibPath)' == '' And Exists('$(GamePath)\unstripped_corlib')">$(GamePath)\unstripped_corlib</CorlibPath>
         <CorlibPath Condition="'$(CorlibPath)' == '' And Exists('$(GamePath)\unstripped_corelib')">$(GamePath)\unstripped_corelib</CorlibPath>
         <CorlibPath Condition="'$(CorlibPath)' == ''">$(GamePath)\valheim_Data\Managed</CorlibPath>
-        <PublicizedAssembliesPath Condition="'$(PublicizedAssembliesPath)' == ''">$(GamePath)\valheim_Data\Managed\publicized_assemblies</PublicizedAssembliesPath>
         <CopyOutputDLLPath Condition="'$(CopyOutputDLLPath)' == ''">$(GamePath)\BepInEx\plugins</CopyOutputDLLPath>
     </PropertyGroup>
     <ItemGroup>
@@ -70,13 +69,13 @@
             <HintPath>$(BepInExPath)\core\0Harmony.dll</HintPath>
         </Reference>
         <Reference Include="assembly_guiutils">
-            <HintPath>$(PublicizedAssembliesPath)\assembly_guiutils_publicized.dll</HintPath>
+            <HintPath>$(CorlibPath)\assembly_guiutils.dll</HintPath>
         </Reference>
         <Reference Include="assembly_utils">
-            <HintPath>$(PublicizedAssembliesPath)\assembly_utils_publicized.dll</HintPath>
+            <HintPath>$(CorlibPath)\assembly_utils.dll</HintPath>
         </Reference>
         <Reference Include="assembly_valheim">
-            <HintPath>$(PublicizedAssembliesPath)\assembly_valheim_publicized.dll</HintPath>
+            <HintPath>$(CorlibPath)\assembly_valheim.dll</HintPath>
         </Reference>
         <Reference Include="BepInEx">
             <HintPath>$(BepInExPath)\core\BepInEx.dll</HintPath>
@@ -94,6 +93,9 @@
         <Reference Include="UnityEngine.AssetBundleModule">
             <HintPath>$(CorlibPath)\UnityEngine.AssetBundleModule.dll</HintPath>
         </Reference>
+        <Reference Include="UnityEngine.AnimationModule">
+            <HintPath>$(CorlibPath)\UnityEngine.AnimationModule.dll</HintPath>
+        </Reference>
         <Reference Include="UnityEngine.CoreModule">
             <HintPath>$(CorlibPath)\UnityEngine.CoreModule.dll</HintPath>
         </Reference>
@@ -109,6 +111,9 @@
         <Reference Include="UnityEngine.UI">
             <HintPath>$(CorlibPath)\UnityEngine.UI.dll</HintPath>
         </Reference>
+        <Reference Include="UnityEngine.UIModule">
+            <HintPath>$(CorlibPath)\UnityEngine.UIModule.dll</HintPath>
+        </Reference>
         <Reference Include="Unity.TextMeshPro">
             <HintPath>$(GamePath)\valheim_Data\Managed\Unity.TextMeshPro.dll</HintPath>
         </Reference>
@@ -119,12 +124,14 @@
     </ItemGroup>
     <ItemGroup>
         <Compile Include="Plugin.cs"/>
+        <Compile Include="GameAccess.cs"/>
         <Compile Include="MonsterDiveYaml.cs"/>
         <Compile Include="DiveLocalization.cs"/>
         <Compile Include="PlayerDiveConfig.cs"/>
         <Compile Include="PlayerDiveController.cs"/>
         <Compile Include="PlayerDiveIntegration.cs"/>
         <Compile Include="PlayerDiveKeyHints.cs"/>
+        <Compile Include="FastSwimHud.cs"/>
         <Compile Include="UnderwaterDepthUtils.cs"/>
         <Compile Include="MonsterDiveProfiles.cs"/>
         <Compile Include="MonsterDiveMovement.cs"/>

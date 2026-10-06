@@ -15,7 +15,7 @@ namespace ServerSyncModTemplate;
 public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
 {
     internal const string ModName = "DiveIn";
-    internal const string ModVersion = "1.2.2";
+    internal const string ModVersion = "1.2.4";
     internal const string Author = "sighsorry";
     private const string ModGUID = $"{Author}.{ModName}";
 
@@ -102,6 +102,7 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
             },
             "player dive state");
         TryCleanup(PlayerDiveKeyHints.DestroyHints, "player key hints");
+        TryCleanup(FastSwimHud.Clear, "fast swim HUD");
         TryCleanup(UnderwaterVisualState.ResetAll, "underwater visuals");
         TryCleanup(
             () =>

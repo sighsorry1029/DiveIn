@@ -34,12 +34,14 @@ internal static class PlayerDiveKeyHints
     {
         public DiveHintSnapshot(
             bool showFastSwimHint,
+            bool showDiveControls,
             string fastSwimLabel,
             string runKey,
             string descendKey,
             string ascendKey)
         {
             ShowFastSwimHint = showFastSwimHint;
+            ShowDiveControls = showDiveControls;
             FastSwimLabel = fastSwimLabel;
             RunKey = runKey;
             DescendKey = descendKey;
@@ -47,6 +49,7 @@ internal static class PlayerDiveKeyHints
         }
 
         public bool ShowFastSwimHint { get; }
+        public bool ShowDiveControls { get; }
         public string FastSwimLabel { get; }
         public string RunKey { get; }
         public string DescendKey { get; }
@@ -55,6 +58,7 @@ internal static class PlayerDiveKeyHints
         public bool Matches(DiveHintSnapshot other)
         {
             return ShowFastSwimHint == other.ShowFastSwimHint
+                   && ShowDiveControls == other.ShowDiveControls
                    && FastSwimLabel == other.FastSwimLabel
                    && RunKey == other.RunKey
                    && DescendKey == other.DescendKey
@@ -148,26 +152,32 @@ internal static class PlayerDiveKeyHints
         public DiveHintCell DescendHint { get; }
         public DiveHintCell AscendHint { get; }
         private bool ShowRunHint { get; set; } = true;
+        private bool ShowDiveControls { get; set; } = true;
 
         public bool IsValid => RunHint.IsValid && DescendHint.IsValid && AscendHint.IsValid && (Root == null || Root);
 
-        public void Configure(bool showRunHint, string fastSwimLabel, string runKey, string descendKey, string ascendKey)
+        public void Configure(bool showRunHint, bool showDiveControls, string fastSwimLabel, string runKey, string descendKey, string ascendKey)
         {
             ShowRunHint = showRunHint;
+            ShowDiveControls = showDiveControls;
             if (showRunHint)
             {
                 RunHint.Configure(fastSwimLabel, runKey);
             }
 
-            DescendHint.Configure(DiveLocalization.Localize(DiveLocalization.DescendKey), descendKey);
-            AscendHint.Configure(DiveLocalization.Localize(DiveLocalization.AscendKey), ascendKey);
+            if (showDiveControls)
+            {
+                DescendHint.Configure(DiveLocalization.Localize(DiveLocalization.DescendKey), descendKey);
+                AscendHint.Configure(DiveLocalization.Localize(DiveLocalization.AscendKey), ascendKey);
+            }
         }
 
         public bool SetActive(bool active)
         {
+            active &= ShowRunHint || ShowDiveControls;
             bool changed = RunHint.SetActive(active && ShowRunHint);
-            changed |= DescendHint.SetActive(active);
-            changed |= AscendHint.SetActive(active);
+            changed |= DescendHint.SetActive(active && ShowDiveControls);
+            changed |= AscendHint.SetActive(active && ShowDiveControls);
             if (Root && Root!.activeSelf != active)
             {
                 Root!.SetActive(active);
@@ -197,7 +207,7 @@ internal static class PlayerDiveKeyHints
     }
 
     [HarmonyPostfix]
-    [HarmonyPatch(typeof(KeyHints), nameof(KeyHints.Awake))]
+    [HarmonyPatch(typeof(KeyHints), "Awake")]
     private static void KeyHintsAwakePostfix(KeyHints __instance)
     {
         EnsureHints(__instance);
@@ -205,7 +215,7 @@ internal static class PlayerDiveKeyHints
     }
 
     [HarmonyPostfix]
-    [HarmonyPatch(typeof(KeyHints), nameof(KeyHints.UpdateHints))]
+    [HarmonyPatch(typeof(KeyHints), "UpdateHints")]
     private static void KeyHintsUpdateHintsPostfix(KeyHints __instance)
     {
         UpdateDiveHints(__instance);
@@ -240,18 +250,20 @@ internal static class PlayerDiveKeyHints
             return;
         }
 
-        bool showFastSwimHint = diver.CanUseFastSwim();
+        bool showFastSwimHint = diver.CanUseFastSwim() && !FastSwimHud.StatusVisible;
+        bool showDiveControls = !FastSwimHud.ControlsVisible;
         string runKey = showFastSwimHint ? ServerSyncModTemplatePlugin.GetDiveRunKeyHint() : string.Empty;
-        string fastSwimLabel = DiveLocalization.Localize(diver.IsFastSwimEnabled()
+        string fastSwimLabel = showFastSwimHint ? DiveLocalization.Localize(diver.IsFastSwimEnabled()
             ? DiveLocalization.FastSwimOnKey
-            : DiveLocalization.FastSwimOffKey);
-        string descendKey = ServerSyncModTemplatePlugin.GetDiveDescendKeyHint();
-        string ascendKey = ServerSyncModTemplatePlugin.GetDiveAscendKeyHint();
+            : DiveLocalization.FastSwimOffKey) : string.Empty;
+        string descendKey = showDiveControls ? ServerSyncModTemplatePlugin.GetDiveDescendKeyHint() : string.Empty;
+        string ascendKey = showDiveControls ? ServerSyncModTemplatePlugin.GetDiveAscendKeyHint() : string.Empty;
         bool showCombatHints = keyHints.m_combatHints != null && keyHints.m_combatHints.activeSelf;
         bool showSwimmingHints = !showCombatHints && HasNoVisibleHandItems(player);
 
         DiveHintSnapshot snapshot = new(
             showFastSwimHint,
+            showDiveControls,
             fastSwimLabel,
             runKey,
             descendKey,
@@ -260,8 +272,8 @@ internal static class PlayerDiveKeyHints
         if (contentChanged)
         {
             _lastHintSnapshot = snapshot;
-            _swimmingHints?.Configure(showFastSwimHint, fastSwimLabel, runKey, descendKey, ascendKey);
-            _combatHints?.Configure(showFastSwimHint, fastSwimLabel, runKey, descendKey, ascendKey);
+            _swimmingHints?.Configure(showFastSwimHint, showDiveControls, fastSwimLabel, runKey, descendKey, ascendKey);
+            _combatHints?.Configure(showFastSwimHint, showDiveControls, fastSwimLabel, runKey, descendKey, ascendKey);
         }
 
         bool visibilityChanged = _combatHints?.SetActive(showCombatHints) == true;
@@ -275,7 +287,7 @@ internal static class PlayerDiveKeyHints
 
     private static bool CanShowKeyHints(KeyHints keyHints, Player player)
     {
-        if (keyHints == null || !keyHints.m_keyHintsEnabled || player == null || player.IsDead())
+        if (keyHints == null || !GameAccess.KeyHintsEnabled(keyHints) || player == null || player.IsDead())
         {
             return false;
         }
@@ -291,7 +303,8 @@ internal static class PlayerDiveKeyHints
         }
 
         if (InventoryGui.instance != null &&
-            (InventoryGui.instance.IsSkillsPanelOpen || InventoryGui.instance.IsTrophisPanelOpen || InventoryGui.instance.IsTextPanelOpen))
+            (InventoryGui.instance.IsSkillsPanelOpen || InventoryGui.instance.IsTrophisPanelOpen
+             || InventoryGui.instance.IsAchievementsPanelOpen || InventoryGui.instance.IsTextPanelOpen))
         {
             return false;
         }
@@ -308,8 +321,8 @@ internal static class PlayerDiveKeyHints
 
     private static bool HasNoVisibleHandItems(Player player)
     {
-        return player.m_rightItem == null
-               && player.m_leftItem == null;
+        return player.RightItem == null
+               && player.LeftItem == null;
     }
 
     private static bool EnsureHints(KeyHints keyHints)
@@ -537,6 +550,14 @@ internal static class PlayerDiveKeyHints
         hint.name = name;
         hint.transform.SetSiblingIndex(siblingIndex);
         return new DiveHintCell(hint);
+    }
+
+    internal static void RefreshForFastSwimHud()
+    {
+        if (_owner != null)
+        {
+            UpdateDiveHints(_owner);
+        }
     }
 
     private static void HideDiveHints()
