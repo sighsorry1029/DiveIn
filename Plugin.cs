@@ -10,12 +10,13 @@ using ServerSync;
 namespace ServerSyncModTemplate;
 
 [BepInPlugin(ModGUID, ModName, ModVersion)]
+[BepInDependency(PathOfValheimanCompat.PluginGuid, BepInDependency.DependencyFlags.SoftDependency)]
 [BepInIncompatibility("Searica.Valheim.UnderTheSea")]
 [BepInIncompatibility("blacks7ar.VikingsDoSwim")]
 public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
 {
     internal const string ModName = "DiveIn";
-    internal const string ModVersion = "1.2.4";
+    internal const string ModVersion = "1.2.5";
     internal const string Author = "sighsorry";
     private const string ModGUID = $"{Author}.{ModName}";
 
@@ -55,6 +56,7 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
             InitializePlayerDiveConfig();
             InitializeMonsterDiveYaml();
 
+            PathOfValheimanCompat.Initialize();
             _harmony.PatchAll(Assembly.GetExecutingAssembly());
             DiveLocalization.Register();
             SetupConfigWatcher();
@@ -88,6 +90,7 @@ public partial class ServerSyncModTemplatePlugin : BaseUnityPlugin
 
         _isShuttingDown = true;
         TryCleanup(_harmony.UnpatchSelf, "Harmony patches");
+        TryCleanup(PathOfValheimanCompat.Reset, "Path of Valheiman integration");
         TryCleanup(
             () =>
             {

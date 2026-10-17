@@ -8,12 +8,14 @@ using Code = Mono.Cecil.Cil.Code;
 
 // Read original assemblies only; never publicize, load a world or change game files.
 // Run once per client/server in separate processes, so reflection cannot reuse another game's types.
-if (args.Length != 3)
-    throw new ArgumentException("Usage: <merged DiveIn.dll> <original Managed directory> <BepInEx core directory>");
+if (args.Length is not (3 or 4))
+    throw new ArgumentException("Usage: <merged DiveIn.dll> <original Managed directory> <BepInEx core directory> [PathOfValheiman.dll]");
 string modPath = Path.GetFullPath(args[0]);
 string managed = Path.GetFullPath(args[1]);
 string core = Path.GetFullPath(args[2]);
-string[] directories = [managed, core, Path.GetDirectoryName(modPath)!];
+string[] directories = args.Length == 4
+    ? [managed, core, Path.GetDirectoryName(modPath)!, Path.GetDirectoryName(Path.GetFullPath(args[3]))!]
+    : [managed, core, Path.GetDirectoryName(modPath)!];
 AppDomain.CurrentDomain.AssemblyResolve += (_, request) =>
 {
     var name = new AssemblyName(request.Name);
@@ -123,6 +125,7 @@ foreach (string name in new[] { "Humanoid.UpdateEquipment", "Humanoid.EquipItem"
 }
 CheckSwimHud(mod);
 CheckWaterColorSeamPatch(module);
+PathOfValheimanChecks.Run(mod, module, args.Length == 4 ? Path.GetFullPath(args[3]) : null);
 Console.WriteLine("Compatibility checks passed. Gameplay, Unity callbacks, rendering and multiplayer remain in-game checks.");
 
 // Bound the compiled patch's scope without calling Unity native APIs or claiming rendered-shader validation.

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.5
+
+- Added optional Path of Valheiman compatibility: water equipment and combat now follow its live Combat in the Depths node and melee/shield rules, while retaining DiveIn's item blacklist. Node refunds and character changes are reflected without restarting.
+- Fixed the swimming equipment patch warnings caused by Path of Valheiman replacing the vanilla swimming checks. DiveIn now composes with PoV's existing checks without bypassing its unlock or weapon restrictions.
+- Guarded hidden-hand restoration so forbidden or blacklisted equipment is not forced back into use or stripped of its hidden-item reference. Prevented repeated shield-only restoration when PoV would immediately hide it again.
+- Limited DiveIn's combat movement suppression and guard-animation assistance to PoV-permitted actions. Diving, Fast Swim, HUD, resource tuning and projectile penalties are unchanged; without PoV, existing DiveIn behavior is preserved.
+
 ## 1.2.4
 
 - Added a compact swimming HUD with ascent/descent controls on the first row and a simple Fast Swim On/Off status below, styled to match the stamina bar's number text and updated for keyboard/gamepad bindings.

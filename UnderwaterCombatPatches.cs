@@ -30,7 +30,9 @@ internal static class UnderwaterCombatPatches
 
         crouch = false;
 
-        bool hadCombatInput = attack || attackHold || secondaryAttack || secondaryAttackHold || block || blockHold;
+        bool hadCombatInput = (attack || attackHold) && PathOfValheimanCompat.CanUseAttackInput(__instance, secondary: false)
+                              || (secondaryAttack || secondaryAttackHold) && PathOfValheimanCompat.CanUseAttackInput(__instance, secondary: true)
+                              || (block || blockHold) && PathOfValheimanCompat.CanUseBlockInput(__instance);
         if (hadCombatInput)
         {
             movedir = Vector3.zero;
@@ -63,13 +65,15 @@ internal static class UnderwaterCombatPatches
                && !player.InDodge()
                && !HasEquippedBlocker(player)
                && HasHiddenBlocker(player)
-               && !HasWaterRestrictedHiddenBlocker(player);
+               && !HasWaterRestrictedHiddenBlocker(player)
+               && PathOfValheimanCompat.CanRestoreHiddenItems(player);
     }
 
     private static bool ShouldShowUnderwaterGuardAnimation(Player player)
     {
         return PlayerDiveUtils.TryGetUnderwaterLocalDiver(player, out _)
-               && player.IsBlocking();
+               && player.IsBlocking()
+               && PathOfValheimanCompat.CanUseBlockInput(player);
     }
 
     private static bool HasWaterRestrictedHiddenBlocker(Player player)

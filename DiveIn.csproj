@@ -125,6 +125,7 @@
     <ItemGroup>
         <Compile Include="Plugin.cs"/>
         <Compile Include="GameAccess.cs"/>
+        <Compile Include="PathOfValheimanCompat.cs"/>
         <Compile Include="MonsterDiveYaml.cs"/>
         <Compile Include="DiveLocalization.cs"/>
         <Compile Include="PlayerDiveConfig.cs"/>

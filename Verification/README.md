@@ -87,3 +87,55 @@ In-game checks still required:
 - Nexus ZIP SHA-256: `D0FA16FCFC21B2B6926584EB22321D2AED0BE07BBF547400FD040D059F4A311A`.
 
 Actual Unity/GPU rendering and client/host/dedicated-server gameplay checks remain outstanding. This Release build does not replace the locally deployed Debug DLL. Uploader and site publication checks were not part of this request.
+
+## Path of Valheiman water-combat integration (2026-10-17)
+
+Scope: optional Path of Valheiman 5.0.4 (`treextr.pathofvalheiman`) integration, not a general game-version migration. The supplied profile uses Valheim 1.0.20. Its original client build 25909357 and dedicated-server build 25909431 keep the same two Humanoid gate bodies as 1.0.16. PoV's `WaterCombat` transpilers replace `IsSwimming()` before DiveIn runs, explaining the original pattern-not-found warnings.
+
+- PoV DLL inspected without publicizing: `C:\Users\blizz\AppData\Roaming\com.kesomannen.gale\valheim\profiles\asdfzcvzcvv\BepInEx\plugins\treextr-PathOfValheiman\PathOfValheiman\PathOfValheiman.dll`, SHA-256 `36E45B65B44667AD596446CAC2AE989041669948C11710B05185E4FE16697DB4`.
+- `PathOfValheimanCompat.cs` isolates the optional binding, live predicates and same-signature IL adapter. It adds one file to navigate, but keeps external API names/failure handling out of normal swimming and avoids duplicating PoV's tree, item classifications or progression state.
+- A BepInEx soft dependency orders initialization; no manifest dependency, PoV assembly reference or bundled external DLL is added. The two equipment transpilers run after PoV and replace exactly one known PoV helper call each. Branches, stack signatures, labels and exception blocks remain intact. PoV is still called on every decision; only the cached delegates, not the unlock result, are retained.
+- `Enabled(Character)` is PoV's private live-node predicate; there is no equivalent public node-only predicate in the inspected `WaterCombat` type. It is bound explicitly once via Harmony after checking the static signature and boolean return type. Public `ShouldBlockWaterEquip`, `ShouldHideForSwimming`, `IsMeleeWeapon` and `AllowsAttack` supply the existing policy.
+- PoV owns water-combat unlock and melee/shield/attack rules. DiveIn only adds its existing item blacklist for the local swimming player. Armor/accessory entries do not become a global hand-equipment ban; listed hand equipment retains the existing both-hands hiding semantics. Original grounded/dead/non-player branch checks remain unchanged.
+- DiveIn's Hide/Block restoration checks every hidden item before calling `ShowHandItems`, which otherwise clears hidden references even if equipping fails. A melee weapon must be present in the resulting hand set; PoV immediately hides shield-only equipment, so DiveIn must not repeatedly restore it. No inventory remove/add/clone calls are added.
+- Movement suppression and guard-animation assistance follow the current node and permitted weapon/attack, retaining grounded behavior. DiveIn does not replace PoV's `Attack.Start` patch. Node refund and character changes are observed through live PoV calls. Diving, Fast Swim, resource tuning, visuals, HUD, creature movement and projectile ownership/penalty paths are untouched.
+- Missing/changed APIs or an unexpected gate stop the integration rather than enabling DiveIn's unrestricted bypass. Already integrated gates conservatively use the swimming restriction; other mod patches are not removed. A runtime binding/predicate failure logs once, stops further optional calls and does not disable diving. Cleanup unpatches DiveIn before releasing cached delegates.
+
+The optional fourth verifier argument is the original PoV DLL. Tests must run in separate processes per original game target, without loading a game world. The supplied DLL is neither modified nor copied into this repository or the game.
+
+Validation completed:
+
+- `dotnet build DiveIn.sln -c Debug -p:DeployToGame=true`: zero warnings/errors; final merged Debug DLL and default Steam deployment both SHA-256 `CD9B7C977486075EF12D0A999B42CF543F05CDD21ADAF9835A8213F74C9EE226`.
+- Final Debug DLL against original 1.0.20 client/server in separate processes: 555 direct game member operands, 38 cached game accessors, 51 declarative patches / 37 targets, both vanilla equipment pattern checks, 26 HUD/config cases and the static water-shader contract passed. No direct non-public/literal game access and no hard PoV assembly reference were found.
+- Actual PoV 5.0.4 DLL: all five predicate signatures bound, including the private live-node predicate. Its two equipment transpilers followed by DiveIn's transpilers change only the expected helper operand, preserving all other instructions, branches, labels and exception blocks. Fresh Harmony-style rebuilds and zero/two-helper-call mismatch checks passed. Soft-dependency and `HarmonyAfter` metadata were checked.
+- Isolated mock-context policy checks passed: absent/locked/unlocked/refunded state, no cached unlock results, partial binding rejection, delegate failure, original PoV restriction OR blacklist truth table, local/remote and water/land scope, non-hand armor blacklist isolation, allowed melee/shield restoration, forbidden/blacklisted mixed hidden pairs without changing either hidden reference, shield-only denial, primary/secondary/ranged decisions and grounded exemption.
+- These tests use .NET 9 / HarmonyX 2.16, not the game's Mono host. Logger reads, native animation hashing, local-player identity, blacklist lookup, ground/current-weapon context and PoV gameplay predicates are isolated or mocked for policy tests. Actual PoV transpilers and signature binding are tested separately. No original game DLL is rewritten or publicized. Passing these tests is not proof of actual Unity, node progression, graphics or multiplayer execution.
+
+Original target directories under `C:\Users\blizz\.codex\references\valheim\snapshots`:
+
+- `client-b25909357-windows-x64-20261015T103728Z\original\valheim_Data\Managed`
+- `dedicated-server-b25909431-windows-x64-20261015T103728Z-depot-restored\original\valheim_server_Data\Managed`
+
+In-game checks still required:
+
+1. Start the affected Gale profile with the patched DiveIn DLL. Confirm the compatibility info message and no DiveIn pattern-not-found warnings for either equipment method, including later Harmony rebuilds by Homestead/SecondaryAttacks.
+2. With PoV absent, confirm ordinary DiveIn water equipment, Hide/Block restoration, combat, diving and Fast Swim still work. With PoV present but the node locked, confirm diving/HUD/regen work while equipment follows PoV restrictions.
+3. Unlock `Combat in the Depths`: test melee plus shield, offhand melee, primary vs throwing secondary attacks, ranged/magic weapons, and shield alone. Rejected combat inputs must not trigger DiveIn's swim-movement suppression.
+4. Test blacklisted weapon, shield, armor and accessory separately; an armor blacklist must not hide unrelated hands. Hide and Block with mixed allowed/forbidden hidden items must not erase hidden references or lose/duplicate inventory items.
+5. Refund the node while equipped/hidden, swap characters, die/respawn and reconnect. Check surface swimming, diving, standing on the seabed and transitions to/from land. Existing attacks/animations are not forcibly aborted by this integration.
+6. Host plus two clients with different node states and a dedicated server: no unlock leakage between players, unchanged server blacklist locking and no new RPCs or ownership writes. This client-side compatibility is not a new server-side anti-cheat system.
+
+The Debug deployment target remains the default Steam `BepInEx/plugins/DiveIn.dll`; the supplied Gale profile is not overwritten by this build. Restart and install the tested DLL into the profile before its in-game checks. No Release build, version bump or publication is part of this patch.
+
+## Release 1.2.5 validation (2026-10-17)
+
+The subsequent explicit release request raised `ModVersion` and the source manifest together from 1.2.4 to 1.2.5 through `SetVersion`, and added the PoV compatibility changelog.
+
+- `dotnet build DiveIn.sln -c Release`: zero warnings/errors, successful three-assembly merge and packaging version validation.
+- Final Release DLL passed the verifier against both original 1.0.20 targets listed above, each with the supplied PoV 5.0.4 DLL: 555 game member operands, 38 cached accessors, 51 patches / 37 targets, original equipment IL checks, 26 HUD/config cases, water-shader static contract, optional/mocked PoV policy checks, and actual PoV-to-DiveIn transpiler composition/rebuild/mismatch checks.
+- Confirmed assembly version `1.2.5.0`, packaged manifest version `1.2.5`, BepInExPack dependency `5.4.2351`, exact Thunderstore/Nexus entry sets and SHA-256 equality of every packaged entry with its source file.
+- Release DLL SHA-256: `8AF591CBBACEF3DE9C71AF35BC9134FC75CF6D7E47955467A76C242F26404604`.
+- Thunderstore ZIP SHA-256: `09A082A0DAD38B47B2E61C7A3AC2B384094D3ECACACC31B40D088215AC31CBB5`.
+- Nexus ZIP SHA-256: `4E3BA11FB7345FD34B36AF64C0C13C69E005D9C365D0C2B0FD243FC7FDC30BFE`.
+
+The build did not replace local Steam/Gale plugin DLLs. Actual Unity/Mono gameplay, node progression and multiplayer checks remain outstanding as described above. Uploader and site publication checks were not part of this release request.

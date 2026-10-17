@@ -20,6 +20,7 @@ Normally, creatures cannot follow a diving player far below the surface. DiveIn 
 - Attacking, secondary attacking, and guarding temporarily take priority over swim movement.
 - Player-owned underwater projectiles can use synchronized lifetime, speed, and damage multipliers on the initial launch. Child projectiles spawned by `Projectile.SpawnOnHit` keep the parent spawn logic's values without another DiveIn multiplier, so inherited damage and speed are not repeatedly reduced down the chain.
 - Equipment is usable in water by default; a synchronized prefab blacklist keeps restrictions on listed items without propagating armor or accessory entries to hand equipment. Listed hand items retain vanilla hand-item hiding.
+- When Path of Valheiman is installed, water equipment and combat follow its live `Combat in the Depths` (`WaterMelee`) unlock and melee/shield policy instead of DiveIn's unrestricted equipment bypass. DiveIn's blacklist still applies; the node does not unlock ranged or thrown attacks. Diving, Fast Swim, the HUD, resource tuning and projectile penalties remain unchanged. Refunding the node is reflected without restarting. Without PoV, DiveIn retains its normal behavior.
 - Swimming key hints use the active keyboard or gamepad bindings and supported Valheim languages.
 - Vanilla water color interpolation is initialized correctly across zone borders, above and below the surface. This client-side fix targets the vanilla water shader only; it does not retint the coast or change water depth, waves, buoyancy or swimming physics.
 

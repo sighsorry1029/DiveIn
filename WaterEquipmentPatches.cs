@@ -43,9 +43,15 @@ internal static class WaterEquipmentPatches
     }
 
     [HarmonyTranspiler]
+    [HarmonyAfter(PathOfValheimanCompat.PluginGuid)]
     [HarmonyPatch(typeof(Humanoid), "UpdateEquipment")]
     private static IEnumerable<CodeInstruction> HumanoidUpdateEquipmentTranspiler(IEnumerable<CodeInstruction> instructions)
     {
+        if (PathOfValheimanCompat.Installed)
+        {
+            return PathOfValheimanCompat.RewriteEquipmentGate(instructions, equip: false);
+        }
+
         return InsertWaterEquipmentBypass(
             instructions,
             "Humanoid.UpdateEquipment",
@@ -57,9 +63,15 @@ internal static class WaterEquipmentPatches
     }
 
     [HarmonyTranspiler]
+    [HarmonyAfter(PathOfValheimanCompat.PluginGuid)]
     [HarmonyPatch(typeof(Humanoid), nameof(Humanoid.EquipItem))]
     private static IEnumerable<CodeInstruction> HumanoidEquipItemTranspiler(IEnumerable<CodeInstruction> instructions)
     {
+        if (PathOfValheimanCompat.Installed)
+        {
+            return PathOfValheimanCompat.RewriteEquipmentGate(instructions, equip: true);
+        }
+
         return InsertWaterEquipmentBypass(
             instructions,
             "Humanoid.EquipItem",
@@ -105,7 +117,8 @@ internal static class WaterEquipmentPatches
                && player.LeftItem == null
                && (GameAccess.HiddenRightItem(player) != null || GameAccess.HiddenLeftItem(player) != null)
                && !IsWaterRestrictedItem(GameAccess.HiddenRightItem(player))
-               && !IsWaterRestrictedItem(GameAccess.HiddenLeftItem(player));
+               && !IsWaterRestrictedItem(GameAccess.HiddenLeftItem(player))
+               && PathOfValheimanCompat.CanRestoreHiddenItems(player);
     }
 
     private static bool WasHideInputPressed(Player player)
@@ -140,7 +153,7 @@ internal static class WaterEquipmentPatches
         return !string.IsNullOrEmpty(prefabName) && _blacklist.Contains(prefabName);
     }
 
-    private static bool HasWaterRestrictedHandItem(Humanoid humanoid)
+    internal static bool HasWaterRestrictedHandItem(Humanoid humanoid)
     {
         return IsWaterRestrictedItem(humanoid.RightItem)
                || IsWaterRestrictedItem(GameAccess.HiddenRightItem(humanoid))
