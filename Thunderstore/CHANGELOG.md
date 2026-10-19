@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.6
+
+- Fixed Path of Valheiman water-combat integration failing when its swimming equipment checks receive an upstream swimming result.
+- Support both original and chained PoV checks by inspecting method signatures and actual patched calls, without pinning compatibility to specific PoV versions. Unknown or ambiguous call shapes still disable DiveIn's integration assists with a warning.
+- Preserve upstream swimming decisions, DiveIn's item blacklist, live node unlock/refund behavior, and hidden-hand restoration safeguards. Added regression checks for both call shapes, mixed overloads, and failure handling.
+
 ## 1.2.5
 
 - Added optional Path of Valheiman compatibility: water equipment and combat now follow its live Combat in the Depths node and melee/shield rules, while retaining DiveIn's item blacklist. Node refunds and character changes are reflected without restarting.

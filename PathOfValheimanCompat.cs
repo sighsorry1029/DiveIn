@@ -17,6 +17,8 @@ internal static class PathOfValheimanCompat
     private static Func<Attack, ItemDrop.ItemData, bool>? _allowsAttack;
     private static Func<Character, bool>? _shouldHide;
     private static Func<Character, ItemDrop.ItemData, bool>? _shouldBlockEquip;
+    private static Func<bool, Character, bool>? _shouldHideWithSwimming;
+    private static Func<bool, Character, ItemDrop.ItemData, bool>? _shouldBlockEquipWithSwimming;
     private static bool _failed;
 
     internal static void Initialize()
@@ -46,19 +48,38 @@ internal static class PathOfValheimanCompat
         Func<Character, bool> enabled = BindPredicate<Func<Character, bool>>(waterCombat, "Enabled", typeof(Character));
         Func<ItemDrop.ItemData, bool> melee = BindPredicate<Func<ItemDrop.ItemData, bool>>(waterCombat, "IsMeleeWeapon", typeof(ItemDrop.ItemData));
         Func<Attack, ItemDrop.ItemData, bool> attack = BindPredicate<Func<Attack, ItemDrop.ItemData, bool>>(waterCombat, "AllowsAttack", typeof(Attack), typeof(ItemDrop.ItemData));
-        Func<Character, bool> hide = BindPredicate<Func<Character, bool>>(waterCombat, "ShouldHideForSwimming", typeof(Character));
-        Func<Character, ItemDrop.ItemData, bool> equip = BindPredicate<Func<Character, ItemDrop.ItemData, bool>>(waterCombat, "ShouldBlockWaterEquip", typeof(Character), typeof(ItemDrop.ItemData));
+        // Accept the two known gate contracts, not a list of PoV release versions. Probe silently:
+        // absence of one supported shape is normal, and both may coexist during a transition.
+        Func<Character, bool>? hide = TryBindPredicate<Func<Character, bool>>(waterCombat, "ShouldHideForSwimming", typeof(Character));
+        Func<Character, ItemDrop.ItemData, bool>? equip = TryBindPredicate<Func<Character, ItemDrop.ItemData, bool>>(waterCombat, "ShouldBlockWaterEquip", typeof(Character), typeof(ItemDrop.ItemData));
+        Func<bool, Character, bool>? hideWithSwimming = TryBindPredicate<Func<bool, Character, bool>>(waterCombat, "ShouldHideForSwimming", typeof(bool), typeof(Character));
+        Func<bool, Character, ItemDrop.ItemData, bool>? equipWithSwimming = TryBindPredicate<Func<bool, Character, ItemDrop.ItemData, bool>>(waterCombat, "ShouldBlockWaterEquip", typeof(bool), typeof(Character), typeof(ItemDrop.ItemData));
+        if (hide == null && hideWithSwimming == null)
+            throw new MissingMethodException(waterCombat.FullName, "ShouldHideForSwimming: expected (Character) or (bool, Character)");
+        if (equip == null && equipWithSwimming == null)
+            throw new MissingMethodException(waterCombat.FullName, "ShouldBlockWaterEquip: expected (Character, ItemData) or (bool, Character, ItemData)");
         _isMeleeWeapon = melee;
         _allowsAttack = attack;
         _shouldHide = hide;
         _shouldBlockEquip = equip;
+        _shouldHideWithSwimming = hideWithSwimming;
+        _shouldBlockEquipWithSwimming = equipWithSwimming;
         _enabled = enabled;
     }
 
     private static T BindPredicate<T>(Type type, string name, params Type[] parameters) where T : Delegate
     {
-        MethodInfo method = AccessTools.DeclaredMethod(type, name, parameters);
-        if (method == null || !method.IsStatic || method.ReturnType != typeof(bool) || method.ContainsGenericParameters)
+        return TryBindPredicate<T>(type, name, parameters) ?? throw new MissingMethodException(type.FullName, name);
+    }
+
+    private static T? TryBindPredicate<T>(Type type, string name, params Type[] parameters) where T : Delegate
+    {
+        MethodInfo? method = type.GetMethod(name,
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null, parameters, null);
+        if (method == null) return null;
+        if (!method.IsStatic || method.ReturnType != typeof(bool) || method.ContainsGenericParameters
+            || !method.GetParameters().Select(p => p.ParameterType).SequenceEqual(parameters))
         {
             throw new MissingMethodException(type.FullName, name);
         }
@@ -74,6 +95,8 @@ internal static class PathOfValheimanCompat
         _allowsAttack = null;
         _shouldHide = null;
         _shouldBlockEquip = null;
+        _shouldHideWithSwimming = null;
+        _shouldBlockEquipWithSwimming = null;
         _failed = false;
     }
 
@@ -82,7 +105,7 @@ internal static class PathOfValheimanCompat
         if (!_failed)
         {
             ServerSyncModTemplatePlugin.ServerSyncModTemplateLogger.LogWarning(
-                $"Path of Valheiman water combat integration unavailable: {reason}. DiveIn water-combat assists are disabled; already integrated gates fall back to swimming restrictions. Other mod patches are left untouched.");
+                $"Path of Valheiman water combat integration unavailable: {reason}. DiveIn water-combat assists are disabled; already integrated gates retain their incoming swimming restriction and the DiveIn blacklist. Other mod patches are left untouched.");
         }
         _failed = true;
     }
@@ -95,8 +118,10 @@ internal static class PathOfValheimanCompat
             return code;
         }
 
-        MethodInfo original = equip ? _shouldBlockEquip!.Method : _shouldHide!.Method;
-        List<CodeInstruction> calls = code.Where(i => i.Calls(original)).ToList();
+        MethodInfo? legacy = equip ? _shouldBlockEquip?.Method : _shouldHide?.Method;
+        MethodInfo? withSwimming = equip ? _shouldBlockEquipWithSwimming?.Method : _shouldHideWithSwimming?.Method;
+        List<CodeInstruction> calls = code.Where(i => legacy != null && i.Calls(legacy)
+            || withSwimming != null && i.Calls(withSwimming)).ToList();
         if (calls.Count != 1)
         {
             Fail($"expected one PoV swimming gate in Humanoid.{(equip ? "EquipItem" : "UpdateEquipment")}, found {calls.Count}");
@@ -105,31 +130,69 @@ internal static class PathOfValheimanCompat
 
         // Same stack signature, no inserted branches or removed instructions. Keep labels and exception blocks.
         CodeInstruction replacement = new(calls[0]);
+        bool takesSwimming = withSwimming != null && calls[0].Calls(withSwimming);
         replacement.operand = AccessTools.DeclaredMethod(typeof(PathOfValheimanCompat),
-            equip ? nameof(ShouldBlockWaterEquip) : nameof(ShouldHideForSwimming));
+            takesSwimming
+                ? (equip ? nameof(ShouldBlockWaterEquipWithSwimming) : nameof(ShouldHideForSwimmingWithSwimming))
+                : (equip ? nameof(ShouldBlockWaterEquip) : nameof(ShouldHideForSwimming)));
         code[code.IndexOf(calls[0])] = replacement;
         return code;
     }
 
     private static bool ShouldBlockWaterEquip(Character actor, ItemDrop.ItemData item)
     {
+        // Direct gameplay queries have no upstream gate result; only these sample IsSwimming themselves.
+        if (_shouldBlockEquip == null && _shouldBlockEquipWithSwimming != null)
+            return ShouldBlockWaterEquipWithSwimming(actor.IsSwimming(), actor, item);
         if (_failed || _shouldBlockEquip == null) return actor.IsSwimming();
         bool blocked;
         try { blocked = _shouldBlockEquip(actor, item); }
         catch (Exception ex) { Fail(ex.Message); return actor.IsSwimming(); }
-        return blocked || actor is Player player && PlayerDiveUtils.IsValidLocalPlayer(player)
-            && actor.IsSwimming() && WaterEquipmentPatches.IsWaterRestrictedItem(item);
+        return blocked || IsRestrictedEquip(actor, item);
     }
 
     private static bool ShouldHideForSwimming(Character actor)
     {
+        if (_shouldHide == null && _shouldHideWithSwimming != null)
+            return ShouldHideForSwimmingWithSwimming(actor.IsSwimming(), actor);
         if (_failed || _shouldHide == null) return actor.IsSwimming();
         bool hidden;
         try { hidden = _shouldHide(actor); }
         catch (Exception ex) { Fail(ex.Message); return actor.IsSwimming(); }
-        return hidden || actor is Player player && PlayerDiveUtils.IsValidLocalPlayer(player)
-            && actor.IsSwimming() && WaterEquipmentPatches.HasWaterRestrictedHandItem(player);
+        return hidden || HasRestrictedHands(actor);
     }
+
+    private static bool ShouldBlockWaterEquipWithSwimming(bool swimming, Character actor, ItemDrop.ItemData item)
+    {
+        // PoV now composes after an existing vanilla/other-mod gate. Never replace that supplied result
+        // with a fresh IsSwimming call, including on failure. Our own blacklist remains independent.
+        bool blocked = swimming;
+        if (!_failed && _shouldBlockEquipWithSwimming != null)
+        {
+            try { blocked = _shouldBlockEquipWithSwimming(swimming, actor, item); }
+            catch (Exception ex) { Fail(ex.Message); }
+        }
+        return blocked || IsRestrictedEquip(actor, item);
+    }
+
+    private static bool ShouldHideForSwimmingWithSwimming(bool swimming, Character actor)
+    {
+        bool hidden = swimming;
+        if (!_failed && _shouldHideWithSwimming != null)
+        {
+            try { hidden = _shouldHideWithSwimming(swimming, actor); }
+            catch (Exception ex) { Fail(ex.Message); }
+        }
+        return hidden || HasRestrictedHands(actor);
+    }
+
+    private static bool IsRestrictedEquip(Character actor, ItemDrop.ItemData item) =>
+        actor is Player player && PlayerDiveUtils.IsValidLocalPlayer(player)
+        && actor.IsSwimming() && WaterEquipmentPatches.IsWaterRestrictedItem(item);
+
+    private static bool HasRestrictedHands(Character actor) =>
+        actor is Player player && PlayerDiveUtils.IsValidLocalPlayer(player)
+        && actor.IsSwimming() && WaterEquipmentPatches.HasWaterRestrictedHandItem(player);
 
     private static bool HasNode(Player player)
     {

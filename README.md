@@ -24,6 +24,8 @@ Normally, creatures cannot follow a diving player far below the surface. DiveIn 
 - Swimming key hints use the active keyboard or gamepad bindings and supported Valheim languages.
 - Vanilla water color interpolation is initialized correctly across zone borders, above and below the surface. This client-side fix targets the vanilla water shader only; it does not retint the coast or change water depth, waves, buoyancy or swimming physics.
 
+PoV compatibility checks the water-combat method signatures and the actual patched equipment calls, not the mod version number. Both the original gates and gates that receive an upstream swimming result are supported; the latter preserve that result alongside DiveIn's independent blacklist. Unknown signatures or ambiguous calls disable DiveIn's PoV combat assists with a warning instead of enabling an unrestricted bypass. Future changes to PoV's policy still require review.
+
 ## Creature diving
 
 - Configured creature prefabs stop avoiding water and can navigate underwater.
