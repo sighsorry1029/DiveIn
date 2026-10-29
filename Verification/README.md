@@ -1,17 +1,49 @@
-# Valheim 1.0.7 compatibility checks
+# DiveIn compatibility checks
 
-Target: Windows x64 client build 25185596 and dedicated-server build 25185644.
+Current target: Valheim **1.0.21**, Windows x64 client build **26249040** and dedicated-server build **26266951**. Dated results below are historical and apply only to their stated versions.
 The mod compiles against original game DLLs, not publicized assemblies.
 
 ```powershell
 dotnet build .\DiveIn.sln -c Debug -p:DeployToGame=true
-dotnet run --project .\Verification\CompatibilityChecks.csproj -- .\bin\Debug\DiveIn.dll 'C:\Program Files (x86)\Steam\steamapps\common\Valheim\valheim_Data\Managed' 'C:\Program Files (x86)\Steam\steamapps\common\Valheim\BepInEx\core'
-dotnet run --project .\Verification\CompatibilityChecks.csproj -- .\bin\Debug\DiveIn.dll 'D:\SteamLibrary\steamapps\common\Valheim dedicated server\valheim_server_Data\Managed' 'C:\Program Files (x86)\Steam\steamapps\common\Valheim\BepInEx\core'
+dotnet run --project .\Verification\CompatibilityChecks.csproj -- .\bin\Debug\DiveIn.dll 'C:\Users\blizz\.codex\references\valheim\snapshots\client-b26249040-windows-x64-20261029T094619Z-depot-restored\original\valheim_Data\Managed' 'C:\Program Files (x86)\Steam\steamapps\common\Valheim\BepInEx\core'
+dotnet run --project .\Verification\CompatibilityChecks.csproj -- .\bin\Debug\DiveIn.dll 'C:\Users\blizz\.codex\references\valheim\snapshots\dedicated-server-b26266951-windows-x64-20261029T094713Z-depot-restored\original\valheim_server_Data\Managed' 'C:\Program Files (x86)\Steam\steamapps\common\Valheim\BepInEx\core'
 ```
 
-Use a separate process per target. An archived original Managed directory can replace either installed directory. No game DLL is executed as an application or modified by these checks.
+Use a separate process per target. These archived original Managed directories pin the game inputs even after Steam updates; installed directories may be substituted after confirming the target version. No game DLL is executed as an application or modified by these checks. Supply an optional fourth argument pointing to an existing original `PathOfValheiman.dll` to check its actual transpiler composition. Without that argument, the verifier explicitly skips that check but still runs the synthetic API/policy cases. The previously supplied `asdfafd` profile DLL is absent as of 2026-10-29; an old successful PoV result is not evidence for the current installed combination.
+
+## Valheim 1.0.21 maintenance scope (2026-10-29)
+
+The manifest now requires BepInExPack Valheim **5.4.2360** (runtime **5.4.23.6**). The currently installed Steam core still reports BepInEx assembly version **5.4.23.5**; building or running the isolated verifier against it does not validate the new runtime.
+
+`WaterColorSeamPatch` has been retired for the 1.0.21 baseline. The original `Custom/Water` D3D11 shader no longer performs the `_MainTex_ST` UV transform; the uniform name also disappeared from the restored Vulkan platform blob. `water.mat` and `water_lod.mat` typetrees are unchanged. This removes an obsolete material setter, not a confirmed crash fix. No game-version gate or replacement abstraction was added. The independent underwater surface rotation, `_depth`/`_UseGlobalWind` overrides and restoration remain unchanged.
+
+The verifier now checks that the retired patch and `_MainTex_ST` reference are absent and that the separate renderer's Apply/Reset/ResetAll/ResetStale entry points remain connected to the camera/material patches. This checks compiled structure, not rendered correctness. Original shader evidence, snapshot paths, hashes and analysis limits are recorded in `C:\Users\blizz\.codex\references\valheim\comparisons\1.0.20--1.0.21-divein-20261029\review.json`. Vulkan SPIR-V and GPU behavior were not executed by that review.
+
+Before claiming visual compatibility, restart the game and check DX11 and Vulkan separately: zone boundaries and near-water/LOD transitions, underwater versus surface view, storm waves, Ashlands boundaries, and dungeon entry/exit. Confirm underwater depth/orientation restore after surfacing and world reload. Shader-replacement mods and old restored shaders require separate checks; this patch does not preserve the old-game seam workaround.
+
+### Pre-release Debug validation
+
+- `dotnet build DiveIn.sln -c Debug -p:DeployToGame=true` and the separate Debug verifier build succeeded with zero warnings/errors. The final merged mod remains version **1.2.6.0**; no Release build or version bump was performed.
+- The final `bin/Debug/DiveIn.dll` and automatically deployed `C:\Program Files (x86)\Steam\steamapps\common\Valheim\BepInEx\plugins\DiveIn.dll` have identical SHA-256 **`EA742B6D4D543EDBC297B0250DF5D1491B6E29606392A3D37D1078D959B898B0`**.
+- Separate client/server verifier processes against the original 1.0.21 snapshots above both passed: **555** game member operands, **38** cached accessors, **50** patch methods / **36** original targets, both equipment IL matchers, all **26** HUD/config cases, the new water-surface scope assertion and the synthetic PoV contract/policy cases.
+- Negative control: the unchanged pre-patch Release 1.2.6 DLL was rejected specifically with `Retired water color seam patch is still present.` The existing Release DLL and both Release ZIPs were verified unchanged.
+- The separate `UnderwaterSurfaceRenderer` implementation was compared with the pre-patch source and is unchanged. The pre-existing top-level README edits were preserved.
+- These are build/metadata/isolated-host results using installed BepInEx assembly **5.4.23.5**, not Unity/Mono or new-runtime verification. Actual PoV composition was explicitly skipped without a supplied DLL. Game, host/dedicated-server, crossplay and visual checks remain unperformed.
+
+### Release 1.2.7 validation (2026-10-29)
+
+- The explicit `SetVersion` target updated `Plugin.cs` and the source manifest together to **1.2.7**. `dotnet build DiveIn.sln -c Release` completed with zero warnings/errors, merged the DLL, validated version agreement, and produced both existing package formats.
+- Separate verifier processes against the original 1.0.21 client/server snapshots above both passed: **555** game member operands, **38** cached accessors, **50** patch methods / **36** targets, both equipment IL checks, all **26** HUD/config cases, the water-surface scope assertion and synthetic PoV contract/policy cases.
+- Confirmed assembly version **1.2.7.0**, manifest version **1.2.7**, and packaged BepInExPack dependency **5.4.2360**. The Thunderstore ZIP contains exactly six expected entries and Nexus exactly two; every entry's SHA-256 matches its source file, including the final merged DLL.
+- Final DLL: `bin/Release/DiveIn.dll`, SHA-256 `BEAB073F4961053262B03A05BD14A798C357CECFA95EF0149E84BCD5F48E53CA`.
+- Thunderstore ZIP: `Thunderstore/DiveIn_v1.2.7.zip`, SHA-256 `D7A74D5FDB7651CC03BF367A7907C2F8BB92BDAF2905D54BCD0C3C0346D273F7`.
+- Nexus ZIP: `Nexus/DiveIn_v1.2.7.zip`, SHA-256 `7389564CDA5EDE2BE75A3562CA0EA6F555A4DBB8B7F25786966DED545682183B`.
+- Packaging used the pre-existing edited root README unchanged, SHA-256 `7BACF6612B27B0296BACEA2E8FC8E9E96BAB322D163C7B1E4B659348359F47FF`. That separate README edit is excluded from the release commit and remains in the working tree, so the ZIP's README differs from a clean-checkout rebuild of that commit.
+- This Release build does not deploy to the local game. The tests used installed BepInEx assembly **5.4.23.5** in the isolated host, not runtime **5.4.23.6**. Actual PoV composition was skipped without a supplied DLL; actual Unity/Mono rendering, gameplay and multiplayer remain unverified. Uploader or site publication status was not inspected.
 
 ## Per-target results (2026-09-09)
+
+Historical target: Valheim 1.0.7, Windows x64 client build 25185596 and dedicated-server build 25185644.
 
 - 471 final merged-DLL game member operands resolved; no direct non-public access or static instructions against literal fields.
 - 38 typed, cached accessors initialized using original types.
@@ -23,7 +55,7 @@ The verifier deliberately uses **.NET 9 + HarmonyX 2.16** only in its own proces
 
 ## In-game checks still required
 
-Use BepInExPack Valheim **5.4.2351** and restart after deploying the final DLL.
+Use BepInExPack Valheim **5.4.2360** and restart after deploying the final DLL.
 
 1. Client startup: no DiveIn initialization error, both water-equipment transpilers active. Loading a plugin name alone is not success.
 2. Surface/midwater movement, bottom ascent, fast swim, stamina/eitr regeneration and delays, status effects, teleport into/out of an underwater dungeon; camera and water material restoration after exiting water or unloading.
@@ -33,7 +65,7 @@ Use BepInExPack Valheim **5.4.2351** and restart after deploying the final DLL.
 6. Configured monsters: pursuit, shallow-water flee, crown fear, boss exception, saddle priority, despawn and state restoration.
 7. Host and dedicated server with two clients: locked configuration/YAML sync, non-admin rejection, reconnect and monster/projectile ownership transfer. No duplicated resource handling or item loss/duplication.
 
-The update keeps configuration keys/YAML, RPC policy, minimum mod-version policy and existing lifecycle cleanup. It adds no old-game compatibility or save migration. Release packaging, version bump, commit/push and uploader actions are outside this patch request.
+The update keeps configuration keys/YAML, RPC policy, minimum mod-version policy and existing lifecycle cleanup. It adds no old-game compatibility or save migration. The original maintenance patch did not include a release; subsequent explicitly requested releases are recorded separately above.
 
 ## Swimming HUD patch checks (2026-10-06)
 
@@ -57,6 +89,8 @@ In-game checks still required for this HUD:
 5. Host and remote clients may choose different HUD settings despite server config locking. Dedicated server has no local-player widget and no new network traffic.
 
 ## Water color seam UV initialization (2026-10-06)
+
+Historical implementation and results: the following setup-only workaround was removed for the 1.0.21 baseline described above. Its earlier test results and provenance are preserved here, not claimed as the current implementation.
 
 `WaterColorSeamPatch`, colocated in `UnderwaterSurfaceRenderer.cs`, adds one postfix on the original private `WaterVolume.SetupMaterial`. It skips a null graphics device or missing renderer/material/shader, and only handles `Custom/Water` without an exposed `_MainTex` property. Its only write is `_MainTex_ST = (1, 1, 0, 0)` on the per-renderer material that vanilla already initialized. `_MainTex_ST` is a compiled shader uniform but not an exposed shader property; checking `HasProperty("_MainTex_ST")` would incorrectly skip this fix.
 

@@ -124,96 +124,34 @@ foreach (string name in new[] { "Humanoid.UpdateEquipment", "Humanoid.EquipItem"
     Console.WriteLine($"PASS: {name} swimming/ground branches share a target; insertion index {cursor.Pos}.");
 }
 CheckSwimHud(mod);
-CheckWaterColorSeamPatch(module);
+CheckWaterSurfaceScope(module);
 PathOfValheimanChecks.Run(mod, module, args.Length == 4 ? Path.GetFullPath(args[3]) : null);
 Console.WriteLine("Compatibility checks passed. Gameplay, Unity callbacks, rendering and multiplayer remain in-game checks.");
 
-// Bound the compiled patch's scope without calling Unity native APIs or claiming rendered-shader validation.
-static void CheckWaterColorSeamPatch(ModuleDefinition module)
+// Check retirement and retained call wiring only; this does not execute Unity material operations.
+static void CheckWaterSurfaceScope(ModuleDefinition module)
 {
-    var type = module.GetType("ServerSyncModTemplate.WaterColorSeamPatch")
-               ?? throw new Exception("Missing water color seam patch.");
-    if (type.Fields.Count != 0 || type.Methods.Count != 1)
-        throw new Exception("Water seam patch gained state, a constructor or an additional hook.");
-    var patch = type.Methods.Single();
-    if (patch.Name != "Postfix" || !patch.IsPrivate || !patch.IsStatic || !patch.HasBody
-        || patch.ReturnType.FullName != "System.Void" || patch.Parameters.Count != 1
-        || patch.Parameters[0].ParameterType.FullName != "WaterVolume")
-        throw new Exception("Unexpected water seam patch signature.");
+    if (module.GetType("ServerSyncModTemplate.WaterColorSeamPatch") != null)
+        throw new Exception("Retired water color seam patch is still present.");
+    var instructions = module.GetTypes().Where(t => t.FullName.StartsWith("ServerSyncModTemplate.", StringComparison.Ordinal))
+        .SelectMany(t => t.Methods).Where(m => m.HasBody).SelectMany(m => m.Body.Instructions).ToArray();
+    if (instructions.Any(i => i.OpCode.Code == Code.Ldstr && Equals(i.Operand, "_MainTex_ST")))
+        throw new Exception("DiveIn still references the retired water UV uniform.");
 
-    var instructions = patch.Body.Instructions.Where(i => i.OpCode.Code != Code.Nop).ToArray();
-    var calls = instructions.Where(i => i.OpCode.Code is Code.Call or Code.Callvirt or Code.Newobj).ToArray();
-    var expectedCalls = new Dictionary<string, int>
+    var renderer = module.GetType("ServerSyncModTemplate.UnderwaterSurfaceRenderer")
+                   ?? throw new Exception("Missing separate underwater surface renderer.");
+    var visuals = module.GetType("ServerSyncModTemplate.UnderwaterCameraPatches")
+                  ?? throw new Exception("Missing underwater camera/material patches.");
+    var visualCalls = visuals.Methods.Where(m => m.HasBody).SelectMany(m => m.Body.Instructions)
+        .Where(i => i.OpCode.Code is Code.Call or Code.Callvirt).Select(i => (MethodReference)i.Operand).ToArray();
+    foreach (string name in new[] { "Apply", "Reset", "ResetAll", "ResetStale" })
     {
-        ["UnityEngine.Rendering.GraphicsDeviceType UnityEngine.SystemInfo::get_graphicsDeviceType()"] = 1,
-        ["System.Boolean UnityEngine.Object::op_Equality(UnityEngine.Object,UnityEngine.Object)"] = 3,
-        ["UnityEngine.Material UnityEngine.Renderer::get_material()"] = 1,
-        ["UnityEngine.Shader UnityEngine.Material::get_shader()"] = 2,
-        ["System.String UnityEngine.Object::get_name()"] = 1,
-        ["System.Boolean System.String::op_Inequality(System.String,System.String)"] = 1,
-        ["System.Boolean UnityEngine.Material::HasProperty(System.String)"] = 1,
-        ["System.Void UnityEngine.Vector4::.ctor(System.Single,System.Single,System.Single,System.Single)"] = 1,
-        ["System.Void UnityEngine.Material::SetVector(System.String,UnityEngine.Vector4)"] = 1
-    };
-    foreach (var group in calls.GroupBy(i => ((MethodReference)i.Operand).FullName))
-        if (!expectedCalls.Remove(group.Key, out int count) || group.Count() != count)
-            throw new Exception("Unexpected water seam patch call/count: " + group.Key);
-    if (expectedCalls.Count != 0) throw new Exception("Missing water seam guard or identity setter.");
-
-    foreach (var instruction in instructions)
-    {
-        if (instruction.Operand is FieldReference field
-            && (instruction.OpCode.Code != Code.Ldfld || field.FullName != "UnityEngine.MeshRenderer WaterVolume::m_waterSurface"))
-            throw new Exception("Water seam patch reads or writes unrelated state: " + field.FullName);
-        if (instruction.OpCode.Name.StartsWith("stind") || instruction.OpCode.Name.StartsWith("stelem")
-            || instruction.OpCode.Code is Code.Stfld or Code.Stsfld or Code.Stobj or Code.Cpobj
-                or Code.Initobj or Code.Cpblk or Code.Initblk or Code.Calli)
-            throw new Exception("Water seam patch contains an unexpected state write or indirect call.");
-        if (instruction.OpCode.Code == Code.Newobj
-            && ((MethodReference)instruction.Operand).DeclaringType.FullName != "UnityEngine.Vector4")
-            throw new Exception("Water seam patch allocates an unexpected object.");
+        var entry = renderer.Methods.SingleOrDefault(m => m.Name == name && m.IsStatic && m.HasBody)
+                    ?? throw new Exception("Missing underwater surface entry point: " + name);
+        if (!visualCalls.Any(call => call.FullName == entry.FullName))
+            throw new Exception("Underwater visual lifecycle no longer calls: " + name);
     }
-    var strings = instructions.Where(i => i.OpCode.Code == Code.Ldstr).Select(i => (string)i.Operand).ToArray();
-    if (!strings.SequenceEqual(new[] { "Custom/Water", "_MainTex", "_MainTex_ST" }))
-        throw new Exception("Water seam patch changed its shader/property scope.");
-
-    int CallIndex(string declaringType, string name) => Array.FindIndex(instructions,
-        i => i.Operand is MethodReference m && m.DeclaringType.FullName == declaringType && m.Name == name);
-    int graphics = CallIndex("UnityEngine.SystemInfo", "get_graphicsDeviceType");
-    int material = CallIndex("UnityEngine.Renderer", "get_material");
-    var graphicsType = ((MethodReference)instructions[graphics].Operand).ReturnType.Resolve();
-    int nullGraphics = Convert.ToInt32(graphicsType.Fields.Single(f => f.Name == "Null").Constant);
-    var nullConstant = instructions[graphics + 1];
-    int? actualNull = nullConstant.OpCode.Code switch
-    {
-        Code.Ldc_I4 => (int)nullConstant.Operand,
-        Code.Ldc_I4_S => (sbyte)nullConstant.Operand,
-        var code when (int)code >= (int)Code.Ldc_I4_M1 && (int)code <= (int)Code.Ldc_I4_8 => (int)code - (int)Code.Ldc_I4_0,
-        _ => null
-    };
-    if (actualNull != nullGraphics || graphics >= material
-        || !instructions.Skip(graphics).Take(material - graphics).Any(i => i.OpCode.FlowControl == FlowControl.Cond_Branch))
-        throw new Exception("Water seam patch lacks the early headless guard before material access.");
-    foreach (var call in calls.Where(i => ((MethodReference)i.Operand).Name == "op_Equality"))
-        if (instructions[Array.IndexOf(instructions, call) - 1].OpCode.Code != Code.Ldnull)
-            throw new Exception("Water seam patch changed a renderer/material/shader null guard.");
-    int shaderNameCheck = CallIndex("System.String", "op_Inequality");
-    int mainTextureCheck = CallIndex("UnityEngine.Material", "HasProperty");
-    int setter = CallIndex("UnityEngine.Material", "SetVector");
-    if (!Equals(instructions[shaderNameCheck - 1].Operand, "Custom/Water")
-        || !Equals(instructions[mainTextureCheck - 1].Operand, "_MainTex")
-        || mainTextureCheck >= setter
-        || !instructions.Skip(mainTextureCheck).Take(setter - mainTextureCheck).Any(i => i.OpCode.FlowControl == FlowControl.Cond_Branch))
-        throw new Exception("Water seam patch lacks the expected shader/main-texture guards.");
-    if (setter < 6 || !Equals(instructions[setter - 6].Operand, "_MainTex_ST")
-        || instructions[setter - 1].OpCode.Code != Code.Newobj)
-        throw new Exception("Water seam patch does not set a direct identity vector.");
-    float[] identity = [1f, 1f, 0f, 0f];
-    for (int i = 0; i < identity.Length; i++)
-        if (instructions[setter - 5 + i].OpCode.Code != Code.Ldc_R4
-            || !Equals(instructions[setter - 5 + i].Operand, identity[i]))
-            throw new Exception("Water seam patch changed the identity UV transform.");
-    Console.WriteLine("PASS: static water seam patch contract: guarded setup-only identity UV write, no extra calls or state writes. Branch semantics/rendering still require review/in-game checks.");
+    Console.WriteLine("PASS: retired water seam patch/uniform absent; separate underwater surface apply/reset entry points remain wired. Rendering still requires in-game checks.");
 }
 
 // Exercise the production row policy and config migration without constructing Unity objects.

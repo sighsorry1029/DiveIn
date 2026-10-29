@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.7
+
+- Updated for Valheim 1.0.21 and raised the packaged BepInExPack dependency to 5.4.2360.
+- Removed the obsolete water-color seam workaround now that Valheim's water shader no longer uses the UV transform it corrected. Underwater surface rendering, depth adjustments, and restoration safeguards are unchanged.
+- Updated compatibility checks to verify the retired workaround stays absent while underwater surface apply/reset paths remain connected. Gameplay settings and Path of Valheiman integration are unchanged.
+
 ## 1.2.6
 
 - Fixed Path of Valheiman water-combat integration failing when its swimming equipment checks receive an upstream swimming result.

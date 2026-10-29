@@ -1,36 +1,8 @@
 using System.Collections.Generic;
-using HarmonyLib;
 using UnityEngine;
 using UnityEngine.Rendering;
 
 namespace ServerSyncModTemplate;
-
-// UV initialization identified by MidnightsFX's ValheimCommunityPatch WaterColorSeamPatch (GPL-3.0).
-// Keep this permanent material setup separate from the temporary underwater surface overrides below.
-[HarmonyPatch(typeof(WaterVolume), "SetupMaterial")]
-internal static class WaterColorSeamPatch
-{
-    private static void Postfix(WaterVolume __instance)
-    {
-        if (SystemInfo.graphicsDeviceType == GraphicsDeviceType.Null || __instance.m_waterSurface == null)
-        {
-            return;
-        }
-
-        // Vanilla SetupMaterial has already created the per-renderer material instance.
-        Material material = __instance.m_waterSurface.material;
-        if (material == null || material.shader == null || material.shader.name != "Custom/Water"
-            || material.HasProperty("_MainTex"))
-        {
-            return;
-        }
-
-        // This uniform is used by the shader but is absent from its exposed property list.
-        // Do not guard it with HasProperty("_MainTex_ST"): that would skip the affected vanilla shader.
-        // Only repair color UVs; leave colors, _depth, wave amplitude and CPU water data untouched.
-        material.SetVector("_MainTex_ST", new Vector4(1f, 1f, 0f, 0f));
-    }
-}
 
 internal static class UnderwaterSurfaceRenderer
 {
